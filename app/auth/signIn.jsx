@@ -1,14 +1,11 @@
+// app/auth/signIn.jsx
 import { useRouter } from 'expo-router';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useState } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  View
-} from 'react-native';
-import { auth } from '../../config/firebaseConfig';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { auth, firestore, FieldValue } from '../../config/firebaseConfig';
 import { useUser } from '../../context/UserDetailContext';
 import useTheme from '../../Theme/theme';
+import { StorageHelper } from '../../utils/storage';
 
 import ThemedButton from '../../components/ThemedButton';
 import ThemedText from '../../components/ThemedText';
@@ -24,7 +21,7 @@ export default function SignIn() {
 
   const router = useRouter();
   const theme = useTheme();
-  const { isAuthenticated } = useUser(); // optional
+  const { refreshUserDetails } = useUser();
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -35,13 +32,47 @@ export default function SignIn() {
 
     setIsLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('🔄 Starting sign in process for:', email);
+      
+      const userCredential = await auth.signInWithEmailAndPassword(email, password);
       const user = userCredential.user;
-      console.log('✅ Signed in:', user.email);
+      
+      console.log('✅ Authentication successful for:', user.email);
+      
+      // Update last login time in Firestore
+      try {
+        await firestore.collection('users').doc(user.uid).update({
+          lastLoginAt: FieldValue.serverTimestamp()
+        });
+        console.log('✅ Last login time updated');
+      } catch (firestoreError) {
+        console.warn('⚠️ Could not update last login time:', firestoreError.message);
+      }
+
+      // Mark as not first time user (so they won't see welcome screen again)
+      await StorageHelper.setNotFirstTimeUser();
+      console.log('✅ Marked as returning user');
+      
+      // Refresh user details if context function exists
+      if (refreshUserDetails) {
+        try {
+          await refreshUserDetails();
+          console.log('✅ User details refreshed successfully');
+        } catch (contextError) {
+          console.warn('⚠️ Could not refresh user details:', contextError.message);
+        }
+      }
+      
+      // Clear form
       setEmail('');
       setPassword('');
-      router.replace('/homepage'); // better UX
+      
+      console.log('🎉 Sign in process completed successfully');
+      router.replace('/homepage');
+      
     } catch (error) {
+      console.error('❌ Sign in failed:', error);
+      
       let errorMessage = error.message;
       if (error.code === 'auth/user-not-found') {
         errorMessage = 'No account found with this email address.';
@@ -51,7 +82,12 @@ export default function SignIn() {
         errorMessage = 'Please enter a valid email address.';
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.code === 'auth/user-disabled') {
+        errorMessage = 'This account has been disabled. Please contact support.';
+      } else if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password. Please check your credentials.';
       }
+      
       setMessage(errorMessage);
       setModalVisible(true);
     } finally {
@@ -159,8 +195,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-
-  // Modal Styles
   modalOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,

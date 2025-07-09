@@ -1,12 +1,13 @@
+// app/homepage.jsx
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AuthGuard from '../components/AuthGuard';
-import useTheme from '../Theme/theme'; // ✅ Import your theme
+import useTheme from '../Theme/theme';
 import HomeTab from './tabs/HomeTab';
-import NotificationTab from './tabs/NotificationTab'; // ✅ Import the new tab
-import SettingTab from './tabs/SettingTab'; // ✅ Import the new tab
+import NotificationTab from './tabs/NotificationTab';
+import SettingTab from './tabs/SettingTab'; // This will use the updated SettingTab with logout
 import UserTab from './tabs/UserTab';
 
 const Tab = createBottomTabNavigator();
@@ -65,7 +66,7 @@ function ScrollableNotificationTab() {
 }
 
 function HomePageTabs() {
-  const theme = useTheme(); // ✅ Use your theme
+  const theme = useTheme();
 
   return (
     <Tab.Navigator
@@ -73,7 +74,7 @@ function HomePageTabs() {
         tabBarIcon: ({ color, size }) => {
           let iconName;
           if (route.name === 'Home') {
-            iconName = 'home-outline'; // changed icon to represent home
+            iconName = 'home-outline';
           } else if (route.name === 'User') {
             iconName = 'person-circle-outline';
           } else if (route.name === 'Setting') {
@@ -88,14 +89,14 @@ function HomePageTabs() {
         tabBarStyle: {
           backgroundColor: theme.background,
           borderTopColor: theme.border || '#ccc',
-          elevation: 8, // Android shadow
-          shadowColor: '#000', // iOS shadow
+          elevation: 8,
+          shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.1,
           shadowRadius: 4,
         },
         headerShown: false,
-        tabBarHideOnKeyboard: true, // Hide tab bar when keyboard is open
+        tabBarHideOnKeyboard: true,
       })}
     >
       <Tab.Screen name="Home" component={ScrollableHomeTab} />
@@ -106,7 +107,7 @@ function HomePageTabs() {
   );
 }
 
-export default function Home() {
+export default function Homepage() {
   return (
     <SafeAreaProvider>
       <AuthGuard>
@@ -125,6 +126,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20, // Extra padding at bottom for better scroll experience
+    paddingBottom: 20,
   },
 });

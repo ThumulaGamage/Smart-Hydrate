@@ -1,13 +1,12 @@
+// app/auth/signUp.jsx
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { auth, db } from '../../config/firebaseConfig';
+import { auth, firestore, FieldValue, WaterBottleService } from '../../config/firebaseConfig';
 import { useUser } from '../../context/UserDetailContext';
 import useTheme from '../../Theme/theme';
+import { StorageHelper } from '../../utils/storage';
 
-// Themed Components
 import ThemedButton from '../../components/ThemedButton';
 import ThemedText from '../../components/ThemedText';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -24,21 +23,21 @@ export default function SignUp() {
   const [age, setAge] = useState('');
   const [weight, setWeight] = useState('');
   const [height, setHeight] = useState('');
-  const [activityLevel, setActivityLevel] = useState('moderate'); // sedentary, light, moderate, active, very_active
+  const [activityLevel, setActivityLevel] = useState('moderate');
   const [dailyWaterGoal, setDailyWaterGoal] = useState('');
   const [wakeUpTime, setWakeUpTime] = useState('07:00');
   const [bedTime, setBedTime] = useState('22:00');
-  const [reminderInterval, setReminderInterval] = useState('60'); // minutes
+  const [reminderInterval, setReminderInterval] = useState('60');
   const [healthConditions, setHealthConditions] = useState('');
   const [medications, setMedications] = useState('');
-  const [preferredTemperature, setPreferredTemperature] = useState('room'); // cold, cool, room, warm
+  const [preferredTemperature, setPreferredTemperature] = useState('room');
   
   // UI state
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1); // Multi-step form
+  const [currentStep, setCurrentStep] = useState(1);
 
   const router = useRouter();
   const theme = useTheme();
@@ -105,14 +104,11 @@ export default function SignUp() {
     const weightNum = parseFloat(weight);
     const ageNum = parseInt(age);
     
-    // Basic calculation: 35ml per kg body weight, adjusted for age and activity
     let baseAmount = weightNum * 35;
     
-    // Age adjustment
     if (ageNum > 65) baseAmount *= 0.9;
     if (ageNum < 18) baseAmount *= 1.1;
     
-    // Activity level adjustment
     const activityMultipliers = {
       sedentary: 1.0,
       light: 1.1,
@@ -122,7 +118,6 @@ export default function SignUp() {
     };
     
     baseAmount *= activityMultipliers[activityLevel];
-    
     return Math.round(baseAmount);
   };
 
@@ -131,7 +126,7 @@ export default function SignUp() {
 
     setIsLoading(true);
     try {
-      const resp = await createUserWithEmailAndPassword(auth, email, password);
+      const resp = await auth.createUserWithEmailAndPassword(email, password);
       const user = resp.user;
       await SaveUser(user);
     } catch (error) {
@@ -155,22 +150,39 @@ export default function SignUp() {
 
   const SaveUser = async (user) => {
     try {
+      console.log('🔄 Starting to save user data for:', user.uid);
+      
       if (!user || !user.uid) throw new Error('Invalid user object or missing UID');
       
       const calculatedGoal = dailyWaterGoal || calculateDailyWaterGoal();
+      console.log('📊 Calculated daily goal:', calculatedGoal);
       
+      // Create user profile using WaterBottleService
+      console.log('🔄 Creating WaterBottleService profile...');
+      const waterBottleService = new WaterBottleService(user.uid);
+      await waterBottleService.createUserProfile({
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        dailyGoal: calculatedGoal,
+        weight: parseFloat(weight),
+        age: parseInt(age),
+        height: parseFloat(height),
+        activityLevel: activityLevel
+      });
+      console.log('✅ WaterBottleService profile created successfully');
+      
+      // Save to Firestore for additional user data
+      console.log('🔄 Saving to Firestore...');
       const userData = {
-        // Basic account info
         name: name.trim(),
         email: email.toLowerCase().trim(),
         member: false,
         uid: user.uid,
-        createdAt: new Date().toISOString(),
+        createdAt: FieldValue.serverTimestamp(),
         profileComplete: true,
-        lastLoginAt: new Date().toISOString(),
+        lastLoginAt: FieldValue.serverTimestamp(),
         accountStatus: 'active',
         
-        // Health and hydration profile
         profile: {
           age: parseInt(age),
           weight: parseFloat(weight),
@@ -180,7 +192,6 @@ export default function SignUp() {
           medications: medications.trim(),
         },
         
-        // Hydration settings
         hydrationSettings: {
           dailyWaterGoal: calculatedGoal,
           preferredTemperature: preferredTemperature,
@@ -188,19 +199,17 @@ export default function SignUp() {
           bedTime: bedTime,
           reminderInterval: parseInt(reminderInterval),
           notificationsEnabled: true,
-          smartReminders: true, // AI-based reminders considering activity and environment
+          smartReminders: true,
         },
         
-        // Device and tracking settings
         deviceSettings: {
-          connectedBottles: [], // Array of connected smart bottle IDs
+          connectedBottles: [],
           temperatureUnit: 'celsius',
           volumeUnit: 'ml',
           syncEnabled: true,
           bluetoothEnabled: true,
         },
         
-        // Analytics and history initialization
         analytics: {
           totalDaysTracked: 0,
           averageDailyIntake: 0,
@@ -209,7 +218,6 @@ export default function SignUp() {
           lastBottleSync: null,
         },
         
-        // Privacy and preferences
         preferences: {
           dataSharing: false,
           healthInsights: true,
@@ -218,11 +226,12 @@ export default function SignUp() {
         }
       };
       
-      await setDoc(doc(db, 'users', user.uid), userData);
+      await firestore.collection('users').doc(user.uid).set(userData);
+      console.log('✅ Firestore user document created successfully');
       
       // Initialize daily tracking document
       const today = new Date().toISOString().split('T')[0];
-      await setDoc(doc(db, 'dailyTracking', `${user.uid}_${today}`), {
+      await firestore.collection('dailyTracking').doc(`${user.uid}_${today}`).set({
         userId: user.uid,
         date: today,
         waterIntake: 0,
@@ -234,9 +243,30 @@ export default function SignUp() {
           lastSync: null,
         },
         achievements: [],
+        createdAt: FieldValue.serverTimestamp(),
       });
+      console.log('✅ Daily tracking document created successfully');
       
-      await refreshUserDetails();
+      // Create initial water bottle reading
+      console.log('🔄 Creating initial bottle reading...');
+      await waterBottleService.saveReading({
+        waterLevel: 1000,
+        temperature: 22,
+        batteryLevel: 100,
+        isCharging: false,
+        deviceId: 'bottle_001'
+      });
+      console.log('✅ Initial bottle reading created successfully');
+
+      // Mark as not first time user
+      await StorageHelper.setNotFirstTimeUser();
+      console.log('✅ Marked user as completed onboarding');
+      
+      // Refresh user details in context
+      if (refreshUserDetails) {
+        await refreshUserDetails();
+        console.log('✅ User details refreshed');
+      }
 
       setMessage('Account created successfully! Welcome to your hydration journey!');
       setMessageType('success');
@@ -251,12 +281,17 @@ export default function SignUp() {
       setWeight('');
       setHeight('');
 
+      console.log('🎉 User creation process completed successfully');
+
+      // Navigate to homepage after showing success message
       setTimeout(() => {
-        router.push('/homepage');
+        console.log('🔄 Navigating to homepage...');
+        router.replace('/homepage');
       }, 2000);
+      
     } catch (error) {
-      console.error('❌ Error saving user:', error.message);
-      setMessage('Account created but error saving profile. Please sign in.');
+      console.error('❌ Error saving user data:', error);
+      setMessage(`Account created but error saving profile: ${error.message}. Please try signing in.`);
       setMessageType('error');
       setModalVisible(true);
     }
@@ -290,6 +325,7 @@ export default function SignUp() {
         value={name} 
         onChangeText={setName} 
         editable={!isLoading} 
+        style={styles.input}
       />
       <ThemedTextInput
         placeholder="Email"
@@ -298,6 +334,7 @@ export default function SignUp() {
         keyboardType="email-address"
         autoCapitalize="none"
         editable={!isLoading}
+        style={styles.input}
       />
       <ThemedTextInput
         placeholder="Password"
@@ -305,6 +342,7 @@ export default function SignUp() {
         onChangeText={setPassword}
         secureTextEntry
         editable={!isLoading}
+        style={styles.input}
       />
       <ThemedTextInput
         placeholder="Confirm Password"
@@ -312,6 +350,7 @@ export default function SignUp() {
         onChangeText={setConfirmPassword}
         secureTextEntry
         editable={!isLoading}
+        style={styles.input}
       />
 
       <ThemedButton
@@ -351,6 +390,7 @@ export default function SignUp() {
         onChangeText={setHeight}
         keyboardType="numeric"
         editable={!isLoading}
+        style={styles.input}
       />
 
       <View style={styles.pickerContainer}>
@@ -399,6 +439,7 @@ export default function SignUp() {
         onChangeText={setReminderInterval}
         keyboardType="numeric"
         editable={!isLoading}
+        style={styles.input}
       />
 
       <ThemedTextInput
@@ -407,6 +448,7 @@ export default function SignUp() {
         onChangeText={setHealthConditions}
         multiline
         editable={!isLoading}
+        style={styles.input}
       />
 
       <ThemedTextInput
@@ -415,6 +457,7 @@ export default function SignUp() {
         onChangeText={setMedications}
         multiline
         editable={!isLoading}
+        style={styles.input}
       />
 
       <View style={styles.buttonRow}>
@@ -517,6 +560,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#ddd',
     marginHorizontal: 8,
   },
+  input: {
+    marginBottom: 12,
+    borderRadius: 10,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -524,6 +571,8 @@ const styles = StyleSheet.create({
   },
   halfInput: {
     flex: 1,
+    marginBottom: 12,
+    borderRadius: 10,
   },
   pickerContainer: {
     marginVertical: 12,
