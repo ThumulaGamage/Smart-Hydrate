@@ -32,7 +32,7 @@ export const FieldValue = firebase.firestore.FieldValue; // Add this for server 
 export default firebase;
 
 // =======================================================
-// SMART WATER BOTTLE SERVICE CLASS (Same as before)
+// SMART WATER BOTTLE SERVICE CLASS
 // =======================================================
 
 export class WaterBottleService {
@@ -42,6 +42,8 @@ export class WaterBottleService {
     this.readingsRef = this.userRef.child('readings');
     this.dailyStatsRef = this.userRef.child('dailyStats');
     this.profileRef = this.userRef.child('profile');
+    // Ensure the database instance is available for the constructor's scope
+    this.database = realtimeDB; // Using the exported realtimeDB
   }
 
   // ======================
@@ -118,7 +120,7 @@ export class WaterBottleService {
         .orderByChild('timestamp')
         .limitToLast(1)
         .once('value');
-      
+
       let latestReading = null;
       snapshot.forEach((childSnapshot) => {
         latestReading = {
@@ -126,7 +128,7 @@ export class WaterBottleService {
           ...childSnapshot.val()
         };
       });
-      
+
       return latestReading;
     } catch (error) {
       console.error('Error getting latest reading:', error);
@@ -163,7 +165,7 @@ export class WaterBottleService {
             ...childSnapshot.val()
           });
         });
-        
+
         if (callback) {
           callback(readings);
         }
@@ -191,87 +193,78 @@ export class WaterBottleService {
   // DAILY STATISTICS
   // ======================
 
-  async getTodayStats() {
+  async saveDrinkingEvent(volumeConsumed, timestamp = null) {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const snapshot = await this.dailyStatsRef.child(today).once('value');
-      return snapshot.val();
-    } catch (error) {
-      console.error('Error getting today stats:', error);
-      throw error;
-    }
-  }
-
-  onTodayStats(callback) {
-    const today = new Date().toISOString().split('T')[0];
-    const listener = this.dailyStatsRef.child(today).on('value', (snapshot) => {
-      const stats = snapshot.val();
-      if (callback) {
-        callback(stats);
+      if (!this.userId) {
+        throw new Error('User ID is required');
       }
-    }, (error) => {
-      console.error('Error in today stats listener:', error);
-    });
 
-    return () => this.dailyStatsRef.child(today).off('value', listener);
-  }
+      const currentTime = timestamp || new Date();
+      const today = currentTime.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
-  async getWeeklyStats() {
-    try {
-      const today = new Date();
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      
-      const startDate = weekAgo.toISOString().split('T')[0];
-      const endDate = today.toISOString().split('T')[0];
-      
-      const snapshot = await this.dailyStatsRef
-        .orderByKey()
-        .startAt(startDate)
-        .endAt(endDate)
-        .once('value');
-      
-      const weeklyData = [];
-      snapshot.forEach((childSnapshot) => {
-        weeklyData.push({
-          date: childSnapshot.key,
-          ...childSnapshot.val()
-        });
-      });
-      
-      return weeklyData;
+      // Create the drinking event data
+      const drinkingEvent = {
+        volume: Math.round(volumeConsumed), // Round to nearest ml
+        timestamp: currentTime.toISOString(),
+        date: today,
+        source: 'smart_bottle', // To distinguish from manual entries
+        deviceId: 'bottle_001' // You might want to make this dynamic
+      };
+
+      // Save to drinking events collection
+      const drinkingEventsRef = this.userRef.child('drinkingEvents');
+      const newEventRef = drinkingEventsRef.push();
+      await newEventRef.set(drinkingEvent);
+
+      console.log(`✅ Drinking event saved: ${volumeConsumed}ml at ${currentTime.toLocaleTimeString()}`);
+
+      // Update today's stats using the consolidated update method
+      // IMPORTANT: The `temperature` here should ideally come from a *real* sensor reading
+      // For this method, we are assuming it's provided or we use a placeholder.
+      // The `simulateDrinking` method below will fetch the actual temp/battery.
+      await this.updateDailyStats(volumeConsumed, 22.5); // Using a placeholder temperature for now
+
+      return newEventRef.key;
     } catch (error) {
-      console.error('Error getting weekly stats:', error);
+      console.error('❌ Error saving drinking event:', error);
       throw error;
     }
   }
 
+  // Consolidated and updated method to handle daily statistics
   async updateDailyStats(consumed, temperature) {
     try {
       const today = new Date().toISOString().split('T')[0];
       const statsRef = this.dailyStatsRef.child(today);
-      
+
       const snapshot = await statsRef.once('value');
       const profile = await this.getUserProfile();
       const dailyGoal = profile?.dailyGoal || 2000;
-      
+
       const currentStats = snapshot.val() || {
         date: today,
         totalConsumed: 0,
         goalAchieved: false,
         drinkingFrequency: 0,
-        averageTemperature: temperature,
+        averageTemperature: null, // Initialize as null or 0
         sessions: []
       };
+
+      // Calculate new average temperature if previous one exists
+      let newAverageTemperature = temperature;
+      if (currentStats.averageTemperature !== null) {
+        newAverageTemperature = (currentStats.averageTemperature * currentStats.drinkingFrequency + temperature) / (currentStats.drinkingFrequency + 1);
+      }
 
       const updatedStats = {
         ...currentStats,
         totalConsumed: currentStats.totalConsumed + consumed,
         goalAchieved: (currentStats.totalConsumed + consumed) >= dailyGoal,
         drinkingFrequency: currentStats.drinkingFrequency + 1,
-        averageTemperature: currentStats.averageTemperature 
-          ? (currentStats.averageTemperature + temperature) / 2 
-          : temperature,
+        averageTemperature: newAverageTemperature,
         lastUpdated: firebase.database.ServerValue.TIMESTAMP,
+        lastDrink: new Date().toISOString(), // Added for better tracking
+        goal: dailyGoal, // Ensure the goal is stored with daily stats
         sessions: [
           ...(currentStats.sessions || []),
           {
@@ -283,13 +276,104 @@ export class WaterBottleService {
       };
 
       await statsRef.set(updatedStats);
-      console.log('Daily stats updated for', today);
+      console.log(`✅ Daily stats updated for ${today}: ${updatedStats.totalConsumed}ml total, ${updatedStats.drinkingFrequency} drinks`);
       return updatedStats;
     } catch (error) {
-      console.error('Error updating daily stats:', error);
+      console.error('❌ Error updating daily stats:', error);
       throw error;
     }
   }
+
+  // Enhanced method to get today's stats with real-time updates
+  onTodayStats(callback) {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const todayStatsRef = this.dailyStatsRef.child(today); // Corrected to use dailyStatsRef
+
+      const listener = todayStatsRef.on('value', (snapshot) => {
+        const stats = snapshot.val() || {
+          totalConsumed: 0,
+          drinkingFrequency: 0,
+          goal: 2000, // Default goal, will be updated by updateDailyStats
+          date: today,
+          goalAchieved: false,
+          averageTemperature: null,
+          sessions: []
+        };
+
+        console.log('🔄 Real-time stats update:', stats);
+        callback(stats);
+      }, (error) => {
+        console.error('❌ Error in today stats listener:', error);
+      });
+
+      return () => todayStatsRef.off('value', listener);
+    } catch (error) {
+      console.error('❌ Error setting up today stats listener:', error);
+      return () => {}; // Return empty function to prevent errors
+    }
+  }
+
+  // Method to get today's stats (one-time fetch)
+  async getTodayStats() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const todayStatsRef = this.dailyStatsRef.child(today); // Corrected to use dailyStatsRef
+
+      const snapshot = await todayStatsRef.once('value');
+      return snapshot.val() || {
+        totalConsumed: 0,
+        drinkingFrequency: 0,
+        goal: 2000,
+        date: today,
+        goalAchieved: false,
+        averageTemperature: null,
+        sessions: []
+      };
+    } catch (error) {
+      console.error('❌ Error getting today stats:', error);
+      return {
+        totalConsumed: 0,
+        drinkingFrequency: 0,
+        goal: 2000,
+        date: new Date().toISOString().split('T')[0],
+        goalAchieved: false,
+        averageTemperature: null,
+        sessions: []
+      };
+    }
+  }
+
+  async getWeeklyStats() {
+    try {
+      const today = new Date();
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const startDate = weekAgo.toISOString().split('T')[0];
+      const endDate = today.toISOString().split('T')[0];
+
+      const snapshot = await this.dailyStatsRef
+        .orderByKey()
+        .startAt(startDate)
+        .endAt(endDate)
+        .once('value');
+
+      const weeklyData = [];
+      snapshot.forEach((childSnapshot) => {
+        weeklyData.push({
+          date: childSnapshot.key,
+          ...childSnapshot.val()
+        });
+      });
+
+      return weeklyData;
+    } catch (error) {
+      console.error('Error getting weekly stats:', error);
+      throw error;
+    }
+  }
+
+  // Removed the old updateDailyStats as it's consolidated into the new one
 
   // ======================
   // SIMULATION METHODS
@@ -321,22 +405,36 @@ export class WaterBottleService {
 
   async simulateDrinking(amount) {
     try {
-      const latestReading = await this.getLatestReading();
-      const currentLevel = latestReading?.waterLevel || 1000;
+      const latestSensorReading = await this.getLatestReading();
+      const currentLevel = latestSensorReading?.waterLevel || 1000;
       const newLevel = Math.max(0, currentLevel - amount);
-      
-      await this.saveReading({
-        waterLevel: newLevel,
-        temperature: 18 + Math.random() * 10,
-        batteryLevel: 40 + Math.floor(Math.random() * 60),
-        isCharging: Math.random() > 0.9,
-        deviceId: 'bottle_001'
-      });
 
-      await this.updateDailyStats(amount, 22.5);
-      
-      console.log(`Simulated drinking ${amount}ml. New level: ${newLevel}ml`);
-      return newLevel;
+      // Extract current temperature and battery level from the latest sensor reading
+      const currentTemp = latestSensorReading?.temperature || 20; // Default to 20 if not found
+      const currentBattery = latestSensorReading?.batteryLevel || 100; // Default to 100 if not found
+      const isCharging = latestSensorReading?.isCharging || false;
+
+
+      // Only update readings and daily stats if water volume has actually changed
+      if (newLevel !== currentLevel) {
+        // Save the new water level reading with current temp and battery
+        await this.saveReading({
+          waterLevel: newLevel,
+          temperature: currentTemp, // Use actual current temperature
+          batteryLevel: currentBattery, // Use actual current battery level
+          isCharging: isCharging,
+          deviceId: 'bottle_001'
+        });
+
+        // Update daily stats based on the consumed amount and the actual current temperature
+        await this.updateDailyStats(amount, currentTemp);
+
+        console.log(`Simulated drinking ${amount}ml. New level: ${newLevel}ml`);
+        return newLevel;
+      } else {
+        console.log('No change in water volume detected. No update to readings or daily stats.');
+        return currentLevel; // Return current level if no change
+      }
     } catch (error) {
       console.error('Error simulating drinking:', error);
       throw error;
@@ -345,14 +443,20 @@ export class WaterBottleService {
 
   async refillBottle(capacity = 1000) {
     try {
+      const latestSensorReading = await this.getLatestReading();
+      const currentTemp = latestSensorReading?.temperature || 20;
+      const currentBattery = latestSensorReading?.batteryLevel || 100;
+      const isCharging = latestSensorReading?.isCharging || false;
+
+
       await this.saveReading({
         waterLevel: capacity,
-        temperature: 20 + Math.random() * 5,
-        batteryLevel: 50 + Math.floor(Math.random() * 50),
-        isCharging: false,
+        temperature: currentTemp, // Use current temperature
+        batteryLevel: currentBattery, // Use current battery
+        isCharging: isCharging,
         deviceId: 'bottle_001'
       });
-      
+
       console.log(`Bottle refilled to ${capacity}ml`);
       return capacity;
     } catch (error) {
@@ -370,11 +474,11 @@ export const authHelpers = {
   async signUp(email, password, displayName) {
     try {
       const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-      
+
       if (displayName) {
         await userCredential.user.updateProfile({ displayName });
       }
-      
+
       console.log('User signed up successfully');
       return userCredential.user;
     } catch (error) {

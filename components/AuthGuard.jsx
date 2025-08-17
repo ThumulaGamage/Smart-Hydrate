@@ -1,38 +1,69 @@
-// components/AuthGuard.js
-import { useEffect } from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useUser } from '../context/UserDetailContext';
 import Colors from '../constant/Colors';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 export default function AuthGuard({ children }) {
-  const { loading, isAuthenticated } = useUser();
+  const { isAuthenticated, loading } = useUser();
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDarkMode = colorScheme === 'dark';
 
-  // Show loading screen while checking authentication
+  const themeColors = {
+    background: isDarkMode ? Colors.DARK_BACKGROUND : Colors.WHITE,
+    text: isDarkMode ? Colors.WHITE : Colors.DARK_TEXT,
+    accent: isDarkMode ? Colors.GREEN_LIGHT : Colors.GREEN_DARK,
+  };
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      // Prevent redirect if already on auth page
+      if (!router.pathname?.startsWith('/auth')) {
+        router.replace('/auth/signIn');
+      }
+    }
+  }, [loading, isAuthenticated, router.pathname]);
+
   if (loading) {
     return (
-      <View style={{
-        flex: 1,
-        backgroundColor: Colors.WHITE || '#ffffff',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}>
-        <ActivityIndicator size="large" color={Colors.GREEN_DARK || '#0066CC'} />
-        <Text style={{
-          marginTop: 20,
-          fontSize: 16,
-          color: Colors.GREEN_DARK || '#0066CC'
-        }}>
-          Loading...
+      <Animated.View 
+        style={[styles.loadingContainer, { backgroundColor: themeColors.background }]}
+        entering={FadeIn.duration(300)}
+        exiting={FadeOut.duration(200)}
+      >
+        <ActivityIndicator 
+          size="large" 
+          color={themeColors.accent} 
+          style={styles.spinner}
+        />
+        <Text style={[styles.loadingText, { color: themeColors.text }]}>
+          Loading your session...
         </Text>
-      </View>
+      </Animated.View>
     );
   }
 
-  // Don't render children if not authenticated - root layout will handle redirect
   if (!isAuthenticated) {
-    return null;
+    return null; // Let the navigation handle the redirect
   }
 
-  // Render children if authenticated
   return children;
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  spinner: {
+    transform: [{ scale: 1.3 }],
+    marginBottom: 20,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: '500',
+  },
+});

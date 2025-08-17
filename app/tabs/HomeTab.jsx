@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,6 @@ import { styles } from '../../constant/hometabstyles';
 
 const { width } = Dimensions.get('window');
 
-// Enhanced Water Bottle Visual Component
 const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel, theme }) => {
   const [animatedValue] = useState(new Animated.Value(0));
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -33,7 +32,6 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
       useNativeDriver: false,
     }).start();
 
-    // Pulse animation for low water
     if (waterLevel < 25) {
       Animated.loop(
         Animated.sequence([
@@ -121,42 +119,69 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
   );
 };
 
-// Enhanced Hydration Progress Component
-const HydrationProgress = ({ currentIntake, dailyGoal, goalAchieved, theme }) => {
+const HydrationProgress = ({ currentIntake, dailyGoal, goalAchieved, theme, lastDrinkVolume, showAnimation }) => {
   const progress = Math.min((currentIntake / dailyGoal) * 100, 100);
+  const [animatedProgress] = useState(new Animated.Value(0));
+  const [pulseAnim] = useState(new Animated.Value(1));
+  
+  useEffect(() => {
+    Animated.timing(animatedProgress, {
+      toValue: progress,
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+
+  useEffect(() => {
+    if (showAnimation && lastDrinkVolume > 0) {
+      // Pulse animation when new drink is detected
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.1, duration: 200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [lastDrinkVolume, showAnimation]);
   
   return (
-    <View style={styles.progressContainer}>
+    <Animated.View style={[styles.progressContainer, { transform: [{ scale: pulseAnim }] }]}>
       <View style={styles.progressHeader}>
         <Text style={[styles.progressTitle, { color: theme.text || '#2c3e50' }]}>Today's Hydration Goal</Text>
         {goalAchieved && <Ionicons name="trophy" size={20} color="#FFD700" />}
+        {lastDrinkVolume > 0 && showAnimation && (
+          <View style={styles.newDrinkBadge}>
+            <Text style={styles.newDrinkText}>+{lastDrinkVolume}ml</Text>
+          </View>
+        )}
       </View>
       
       <View style={styles.progressStats}>
-        <Text style={[styles.progressCurrent, { color: theme.primary || '#3498db' }]}>{currentIntake}ml</Text>
+        <Text style={[styles.progressCurrent, { color: theme.primary || '#3498db' }]}>{Math.round(currentIntake)}ml</Text>
         <Text style={[styles.progressGoal, { color: theme.textMuted || '#7f8c8d' }]}>of {dailyGoal}ml</Text>
       </View>
       
       <View style={[styles.progressBar, { backgroundColor: theme.background || '#ecf0f1' }]}>
         <Animated.View style={[styles.progressFill, { 
-          width: `${progress}%`,
-          backgroundColor: theme.primary || '#3498db'
+          width: animatedProgress.interpolate({
+            inputRange: [0, 100],
+            outputRange: ['0%', '100%'],
+            extrapolate: 'clamp',
+          }),
+          backgroundColor: goalAchieved ? '#4CAF50' : (theme.primary || '#3498db')
         }]} />
         <View style={styles.progressOverlay}>
-          <Text style={styles.progressPercentage}>{progress.toFixed(0)}%</Text>
+          <Text style={styles.progressPercentage}>{Math.round(progress)}%</Text>
         </View>
       </View>
       
       <View style={styles.progressFooter}>
         <Text style={[styles.remainingText, { color: theme.textMuted || '#7f8c8d' }]}>
-          {goalAchieved ? '🎉 Goal Achieved!' : `${dailyGoal - currentIntake}ml remaining`}
+          {goalAchieved ? '🎉 Goal Achieved!' : `${Math.max(0, dailyGoal - currentIntake)}ml remaining`}
         </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
-// Weekly Chart Component
 const WeeklyChart = ({ weeklyData, theme }) => {
   if (!weeklyData || weeklyData.length === 0) {
     return (
@@ -204,7 +229,6 @@ const WeeklyChart = ({ weeklyData, theme }) => {
   );
 };
 
-// Smart Recommendations Component
 const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => {
   const getRecommendations = () => {
     const recommendations = [];
@@ -272,7 +296,6 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
   );
 };
 
-// Main Component
 export default function EnhancedHomepage() {
   const { user } = useUser();
   const theme = useTheme();
@@ -292,6 +315,7 @@ export default function EnhancedHomepage() {
     lastUpdate: null,
   });
 
+  const lastReportedWaterLevel = useRef(null);
   const [firebaseData, setFirebaseData] = useState({
     todayStats: null,
     weeklyData: [],
@@ -302,11 +326,62 @@ export default function EnhancedHomepage() {
   const [refreshing, setRefreshing] = useState(false);
   const [waterBottleService, setWaterBottleService] = useState(null);
   const [showChart, setShowChart] = useState(false);
+  
+  // New states for drink detection and animation
+  const [lastDrinkVolume, setLastDrinkVolume] = useState(0);
+  const [showDrinkAnimation, setShowDrinkAnimation] = useState(false);
+  const animationTimeoutRef = useRef(null);
 
   useEffect(() => {
     initializeServices();
     return cleanup;
   }, []);
+
+  // Enhanced function to update hydration progress with animation
+  const updateHydrationProgress = useCallback(async (volumeConsumed) => {
+    if (!waterBottleService) return;
+
+    try {
+      console.log(`💧 Updating hydration progress: +${volumeConsumed.toFixed(0)}ml`);
+      
+      // Show drink animation
+      setLastDrinkVolume(Math.round(volumeConsumed));
+      setShowDrinkAnimation(true);
+      
+      // Save drinking event to database
+      const drinkingEvent = {
+        volume: volumeConsumed,
+        timestamp: new Date().toISOString(),
+        waterLevel: sensorData.waterLevel,
+        temperature: sensorData.temperature
+      };
+      
+      await waterBottleService.saveDrinkingEvent(drinkingEvent);
+      
+      // Immediately refresh today's stats for real-time UI update
+      const updatedStats = await waterBottleService.getTodayStats();
+      console.log('📊 Updated today stats:', updatedStats);
+      
+      setFirebaseData(prev => ({ 
+        ...prev, 
+        todayStats: updatedStats 
+      }));
+
+      // Clear animation after 3 seconds
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+      
+      animationTimeoutRef.current = setTimeout(() => {
+        setShowDrinkAnimation(false);
+        setLastDrinkVolume(0);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Failed to update hydration progress:', error);
+      Alert.alert('Error', 'Failed to update hydration progress. Please try again.');
+    }
+  }, [waterBottleService, sensorData.waterLevel, sensorData.temperature]);
 
   const initializeServices = async () => {
     try {
@@ -330,23 +405,58 @@ export default function EnhancedHomepage() {
           setBleState(state);
         },
         onDataReceived: async (data) => {
-          setSensorData(prev => ({ ...prev, ...data, lastUpdate: new Date() }));
-          
-          if (waterBottleService) {
-            try {
-              await waterBottleService.saveReading({
-                waterLevel: data.waterLevel || prev.waterLevel,
-                temperature: data.temperature || prev.temperature,
-                batteryLevel: data.batteryLevel || prev.batteryLevel,
-                isCharging: data.isCharging || false,
-                deviceId: bleState.deviceName || 'bottle_001'
-              });
-            } catch (error) {
-              console.warn('⚠️ Could not save to Firebase:', error);
+          let newWaterLevel = data.waterLevel;
+          const currentTimestamp = new Date();
+
+          // Validate and sanitize water level
+          if (newWaterLevel === undefined || newWaterLevel === null) return;
+          newWaterLevel = Math.max(0, Math.min(100, newWaterLevel)); // Clamp between 0-100
+
+          // Enhanced drink detection with improved thresholds
+          if (lastReportedWaterLevel.current !== null) {
+            const levelDifference = lastReportedWaterLevel.current - newWaterLevel;
+            const minThreshold = 1.5; // Minimum 1.5% change to detect drink
+            const maxThreshold = 40; // Maximum 40% change to avoid false positives
+
+            console.log('[Water Change Detection]', {
+              previous: lastReportedWaterLevel.current?.toFixed(1),
+              current: newWaterLevel?.toFixed(1),
+              difference: levelDifference?.toFixed(1),
+              threshold: `${minThreshold}-${maxThreshold}%`,
+              bottleCapacity: getBottleCapacity()
+            });
+
+            // Detect consumption (water level decreased)
+            if (levelDifference > minThreshold && levelDifference <= maxThreshold) {
+              const bottleCapacity = getBottleCapacity();
+              const volumeConsumed = (levelDifference / 100) * bottleCapacity;
+              
+              console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml (${levelDifference.toFixed(1)}% decrease)`);
+              
+              // Update hydration progress with animation
+              await updateHydrationProgress(volumeConsumed);
+              
+            } else if (levelDifference < -minThreshold) {
+              console.log('🔄 Bottle refilled - not counting as consumption');
+            } else if (levelDifference > maxThreshold) {
+              console.log('⚠️ Large water level change detected - possibly sensor error or bottle removed');
             }
           }
+
+          // Update sensor data
+          setSensorData(prev => ({ 
+            ...prev, 
+            waterLevel: newWaterLevel,
+            temperature: data.temperature || prev.temperature,
+            batteryLevel: data.batteryLevel || prev.batteryLevel,
+            lastUpdate: currentTimestamp
+          }));
+          
+          // Update last reported level
+          lastReportedWaterLevel.current = newWaterLevel;
         },
         onError: (message) => {
+          console.error('❌ BLE Error:', message);
           Alert.alert('BLE Error', message);
         }
       });
@@ -357,29 +467,32 @@ export default function EnhancedHomepage() {
 
   const loadFirebaseData = async (service) => {
     try {
-      const [todayStats, weeklyData, latestReading, profile] = await Promise.allSettled([
+      console.log('🔄 Loading Firebase data...');
+      const [todayStats, weeklyData, latestReading, profile] = await Promise.all([
         service.getTodayStats(),
         service.getWeeklyStats(),
         service.getLatestReading(),
         service.getUserProfile()
       ]);
 
+      console.log('📊 Loaded today stats:', todayStats);
+
       setFirebaseData({
-        todayStats: todayStats.status === 'fulfilled' ? todayStats.value : null,
-        weeklyData: weeklyData.status === 'fulfilled' ? weeklyData.value : [],
-        latestReading: latestReading.status === 'fulfilled' ? latestReading.value : null,
-        profile: profile.status === 'fulfilled' ? profile.value : null
+        todayStats: todayStats || null,
+        weeklyData: weeklyData || [],
+        latestReading: latestReading || null,
+        profile: profile || null
       });
 
-      if (latestReading.status === 'fulfilled' && latestReading.value) {
-        const latest = latestReading.value;
+      if (latestReading) {
         setSensorData(prev => ({
           ...prev,
-          waterLevel: latest.waterLevel || prev.waterLevel,
-          temperature: latest.temperature || prev.temperature,
-          batteryLevel: latest.batteryLevel || prev.batteryLevel,
-          lastUpdate: new Date(latest.timestamp)
+          waterLevel: latestReading.waterLevel || prev.waterLevel,
+          temperature: latestReading.temperature || prev.temperature,
+          batteryLevel: latestReading.batteryLevel || prev.batteryLevel,
+          lastUpdate: new Date(latestReading.timestamp)
         }));
+        lastReportedWaterLevel.current = latestReading.waterLevel;
       }
     } catch (error) {
       console.error('❌ Error loading Firebase data:', error);
@@ -390,9 +503,14 @@ export default function EnhancedHomepage() {
     const unsubscribers = [];
 
     try {
+      // Enhanced listener for today's stats with better error handling
       if (service.onTodayStats) {
         const unsubscribe = service.onTodayStats((stats) => {
-          setFirebaseData(prev => ({ ...prev, todayStats: stats }));
+          console.log('🔄 Firebase onTodayStats listener triggered:', stats);
+          setFirebaseData(prev => ({ 
+            ...prev, 
+            todayStats: stats 
+          }));
         });
         unsubscribers.push(unsubscribe);
       }
@@ -401,6 +519,7 @@ export default function EnhancedHomepage() {
         const unsubscribe = service.onLatestReadings((readings) => {
           if (readings && readings.length > 0) {
             const latest = readings[0];
+            console.log('🔄 Latest reading updated:', latest);
             setFirebaseData(prev => ({ ...prev, latestReading: latest }));
             setSensorData(prev => ({
               ...prev,
@@ -434,6 +553,9 @@ export default function EnhancedHomepage() {
     if (bleService?.isConnected) {
       bleService.disconnect().catch(e => console.log('Cleanup error:', e));
     }
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
   };
 
   const onRefresh = async () => {
@@ -457,6 +579,8 @@ export default function EnhancedHomepage() {
       const success = await bleService.connectToWaterBottle();
       if (!success) {
         Alert.alert('Connection Failed', 'Could not connect to water bottle');
+      } else {
+        setTimeout(() => sendCommand('GET_DATA'), 1000);
       }
     } catch (error) {
       console.error('❌ Connection error:', error);
@@ -467,6 +591,7 @@ export default function EnhancedHomepage() {
   const handleDisconnect = async () => {
     try {
       await bleService.disconnect();
+      lastReportedWaterLevel.current = null;
     } catch (error) {
       console.error('❌ Disconnect error:', error);
     }
@@ -486,28 +611,17 @@ export default function EnhancedHomepage() {
     }
   };
 
-  const simulateDrinking = async (amount) => {
-    if (waterBottleService) {
-      try {
-        await waterBottleService.simulateDrinking(amount);
-        Alert.alert('Success', `Recorded drinking ${amount}ml`);
-      } catch (error) {
-        console.error('❌ Simulation error:', error);
-        Alert.alert('Error', 'Could not record drinking');
-      }
-    }
+  const getBottleCapacity = () => {
+    return firebaseData.profile?.bottleCapacity || 500;
   };
 
   const getUserDisplayName = () => {
-    // Priority order: user context name, Firebase display name, email name part
     if (user?.name) return user.name;
     if (user?.displayName) return user.displayName;
     if (auth.currentUser?.displayName) return auth.currentUser.displayName;
     
-    // Extract first name from email if no display name
     if (auth.currentUser?.email) {
       const emailPart = auth.currentUser.email.split('@')[0];
-      // Convert email part to readable name (e.g., "john.doe" -> "John Doe")
       return emailPart
         .split(/[._-]/)
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
@@ -526,7 +640,9 @@ export default function EnhancedHomepage() {
   };
 
   const isGoalAchieved = () => {
-    return firebaseData.todayStats?.goalAchieved || false;
+    const intake = getTodayIntake();
+    const goal = getTodayGoal();
+    return intake >= goal;
   };
 
   const getDisplayStats = () => {
@@ -552,7 +668,6 @@ export default function EnhancedHomepage() {
         }
         showsVerticalScrollIndicator={false}
       >
-        
         {/* Header */}
         <View style={[styles.header, { backgroundColor: theme.primary || '#667eea' }]}>
           <View style={styles.headerContent}>
@@ -639,35 +754,24 @@ export default function EnhancedHomepage() {
             theme={theme}
           />
         </View>
+        <View style={[styles.section, { backgroundColor: theme.card || 'white', alignItems: 'center', padding: 16 }]}>
+  <Ionicons name="thermometer" size={32} color={theme.primary || "#2196F3"} />
+  <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text || '#2c3e50' }}>
+    {sensorData.temperature.toFixed(1)}°C
+  </Text>
+  <Text style={{ color: theme.textMuted || '#7f8c8d' }}>Current Water Temperature</Text>
+</View>
 
-        {/* Hydration Progress */}
+        {/* Enhanced Hydration Progress with Auto-Update */}
         <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
           <HydrationProgress 
             currentIntake={getTodayIntake()}
             dailyGoal={getTodayGoal()}
             goalAchieved={isGoalAchieved()}
             theme={theme}
+            lastDrinkVolume={lastDrinkVolume}
+            showAnimation={showDrinkAnimation}
           />
-          
-          {/* Quick Actions */}
-          <View style={[styles.quickDrinkActions, { borderTopColor: theme.border || '#ecf0f1' }]}>
-            <Text style={[styles.quickActionsTitle, { color: theme.text || '#2c3e50' }]}>Quick Log</Text>
-            <View style={styles.quickActionButtons}>
-              {[100, 250, 500].map(amount => (
-                <TouchableOpacity 
-                  key={amount}
-                  style={[styles.quickDrinkButton, { 
-                    backgroundColor: theme.background || '#f8f9fa',
-                    borderColor: theme.border || '#e9ecef'
-                  }]}
-                  onPress={() => simulateDrinking(amount)}
-                >
-                  <Ionicons name="water" size={16} color={theme.primary || "#3498db"} />
-                  <Text style={[styles.quickDrinkText, { color: theme.primary || "#3498db" }]}>{amount}ml</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </View>
 
         {/* Smart Recommendations */}
@@ -706,7 +810,7 @@ export default function EnhancedHomepage() {
               borderColor: theme.border || '#e9ecef'
             }]}>
               <Ionicons name="water" size={24} color={theme.primary || "#3498db"} />
-              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{getDisplayStats().totalConsumed}ml</Text>
+              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{Math.round(getDisplayStats().totalConsumed)}ml</Text>
               <Text style={[styles.summaryLabel, { color: theme.textMuted || '#6c757d' }]}>Total Intake</Text>
             </View>
             <View style={[styles.summaryCard, { 
@@ -714,7 +818,7 @@ export default function EnhancedHomepage() {
               borderColor: theme.border || '#e9ecef'
             }]}>
               <Ionicons name="trending-up" size={24} color={theme.success || "#27ae60"} />
-              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{getDisplayStats().drinkingFrequency}</Text>
+              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{getDisplayStats().drinkingFrequency || 0}</Text>
               <Text style={[styles.summaryLabel, { color: theme.textMuted || '#6c757d' }]}>Drinks Today</Text>
             </View>
             <View style={[styles.summaryCard, { 
@@ -728,8 +832,17 @@ export default function EnhancedHomepage() {
           </View>
         </View>
 
+        {/* Goal Achievement Celebration */}
+        {isGoalAchieved() && showDrinkAnimation && (
+          <View style={[styles.section, { backgroundColor: theme.success || '#4CAF50' }]}>
+            <View style={styles.celebrationContainer}>
+              <Text style={styles.celebrationEmoji}>🎉</Text>
+              <Text style={styles.celebrationTitle}>Congratulations!</Text>
+              <Text style={styles.celebrationText}>You've reached your daily hydration goal!</Text>
+            </View>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
 }
-

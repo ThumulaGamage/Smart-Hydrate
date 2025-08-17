@@ -16,7 +16,20 @@ const Colors = {
     GREEN_LIGHT: '#C8E6C9',
     GREEN_DARK: '#388E3C',
     YELLOW: '#FFEB3B',
-    YELLOW_LIGHT:'#FFF9C4',     
+    YELLOW_LIGHT:'#FFF9C4',    
+      WHITE: '#ffffff',
+  LIGHT_LOADER_BG: 'rgba(255, 255, 255, 0.9)',
+  GREEN_DARK: '#0066CC',
+  DARK_TEXT: '#333333',
+  
+  // Dark theme
+  DARK_BACKGROUND: '#121212',
+  DARK_LOADER_BG: 'rgba(30, 30, 30, 0.9)',
+  GREEN_LIGHT: '#4DA6FF',
+  
+  // Common
+  ACCENT: '#4DA6FF',
+ 
     
     
 }
