@@ -1,5 +1,4 @@
-// DataDebugger.js - Add this to your HomeTab to see live data flow
-
+// DataDebugger.js - Live data flow debugger
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,10 +7,11 @@ import {
   Modal,
   ScrollView,
   TouchableOpacity,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import bleServiceFactory from '../services/BLEServiceFactory';
+import bleServiceFactory from '../services/BLEService';
 
 const DataDebugger = ({ visible, onClose, theme }) => {
   const [liveData, setLiveData] = useState({
@@ -21,6 +21,8 @@ const DataDebugger = ({ visible, onClose, theme }) => {
     dataHistory: [],
     connectionState: 'Unknown'
   });
+  
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -28,6 +30,13 @@ const DataDebugger = ({ visible, onClose, theme }) => {
     // Monitor BLE service directly
     const interval = setInterval(() => {
       const bleService = bleServiceFactory.getInstance();
+      
+      // Add null check
+      if (!bleService) {
+        console.warn('BLE service not initialized yet');
+        return;
+      }
+
       const state = bleService.getState();
       
       setLiveData(prev => ({
@@ -42,44 +51,114 @@ const DataDebugger = ({ visible, onClose, theme }) => {
     return () => clearInterval(interval);
   }, [visible]);
 
+  // Safe JSON stringify to prevent circular reference errors
+  const safeStringify = (obj, space = 2) => {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) {
+          return '[Circular Reference]';
+        }
+        cache.add(value);
+      }
+      return value;
+    }, space);
+  };
+
+  // Truncate large JSON strings
+  const truncateJson = (jsonStr, maxLength = 2000) => {
+    if (jsonStr.length <= maxLength) return jsonStr;
+    return jsonStr.substring(0, maxLength) + '... [truncated]';
+  };
+
+  // Alert debouncing
+  let alertTimeout = null;
+  const showAlert = (title, message) => {
+    if (alertTimeout) clearTimeout(alertTimeout);
+    
+    alertTimeout = setTimeout(() => {
+      Alert.alert(title, message);
+    }, 300);
+  };
+
   const sendTestCommand = async (command) => {
+    if (isSending) {
+      console.log('Already sending command...');
+      return;
+    }
+
+    setIsSending(true);
+    
     try {
       const bleService = bleServiceFactory.getInstance();
-      if (!bleService.isConnected) {
-        Alert.alert('Error', 'Not connected to device');
+      if (!bleService || !bleService.isConnected) {
+        showAlert('Error', 'Not connected to device');
         return;
       }
       
       console.log(`🧪 Sending test command: ${command}`);
       await bleService.sendCommand(command);
-      Alert.alert('Success', `Command "${command}" sent`);
+      showAlert('Success', `Command "${command}" sent`);
     } catch (error) {
       console.error('Command failed:', error);
-      Alert.alert('Error', `Failed: ${error.message}`);
+      showAlert('Error', `Failed: ${error.message}`);
+    } finally {
+      setIsSending(false);
     }
+  };
+
+  // Dynamic troubleshooting hints
+  const getTroubleshootingHints = () => {
+    const hints = [];
+    
+    if (!liveData.lastRawData) {
+      hints.push('❌ No raw data received - check ESP32 BLE transmission');
+    }
+    
+    if (liveData.lastParsedData && liveData.lastParsedData.distance === 0) {
+      hints.push('⚠️ Distance is 0 - possible sensor wiring issue');
+    }
+    
+    if (liveData.lastParsedData && liveData.lastParsedData.waterLevel === 0) {
+      hints.push('⚠️ Water level is 0 - check calibration or sensor');
+    }
+    
+    if (liveData.connectionState !== 'Connected') {
+      hints.push('🔌 Not connected - try reconnecting');
+    }
+    
+    if (hints.length === 0) {
+      hints.push('✅ All systems nominal');
+    }
+    
+    return hints;
   };
 
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <Modal 
+      visible={visible} 
+      animationType="slide" 
+      presentationStyle={Platform.OS === 'ios' ? 'fullScreen' : 'pageSheet'}
+    >
+      <View style={[styles.container, { backgroundColor: theme?.background || '#f5f7fa' }]}>
         
         {/* Header */}
-        <View style={[styles.header, { backgroundColor: theme.card }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Live Data Debugger</Text>
+        <View style={[styles.header, { backgroundColor: theme?.card || 'white' }]}>
+          <Text style={[styles.title, { color: theme?.text || '#2c3e50' }]}>Live Data Debugger</Text>
           <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={theme.text} />
+            <Ionicons name="close" size={24} color={theme?.text || '#2c3e50'} />
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.content}>
           
           {/* Connection Status */}
-          <View style={[styles.section, { backgroundColor: theme.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>🔗 Connection Status</Text>
+          <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+            <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🔗 Connection Status</Text>
             <View style={styles.statusRow}>
-              <Text style={[styles.label, { color: theme.textMuted }]}>State:</Text>
+              <Text style={[styles.label, { color: theme?.textMuted || '#7f8c8d' }]}>State:</Text>
               <Text style={[styles.value, { 
                 color: liveData.connectionState === 'Connected' ? '#4CAF50' : '#f44336' 
               }]}>
@@ -87,32 +166,37 @@ const DataDebugger = ({ visible, onClose, theme }) => {
               </Text>
             </View>
             <View style={styles.statusRow}>
-              <Text style={[styles.label, { color: theme.textMuted }]}>Data Packets:</Text>
-              <Text style={[styles.value, { color: theme.text }]}>
+              <Text style={[styles.label, { color: theme?.textMuted || '#7f8c8d' }]}>Data Packets:</Text>
+              <Text style={[styles.value, { color: theme?.text || '#2c3e50' }]}>
                 {liveData.rawDataCount}
               </Text>
             </View>
           </View>
 
           {/* Test Commands */}
-          <View style={[styles.section, { backgroundColor: theme.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>🧪 Test Commands</Text>
+          <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+            <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🧪 Test Commands</Text>
             <View style={styles.commandRow}>
               <TouchableOpacity
-                style={[styles.commandButton, { backgroundColor: theme.primary }]}
+                style={[styles.commandButton, { backgroundColor: theme?.primary || '#1976D2' }]}
                 onPress={() => sendTestCommand('GET_DATA')}
+                disabled={isSending}
               >
-                <Text style={styles.buttonText}>GET_DATA</Text>
+                <Text style={styles.buttonText}>
+                  {isSending ? 'Sending...' : 'GET_DATA'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.commandButton, { backgroundColor: '#FF9800' }]}
                 onPress={() => sendTestCommand('TEST')}
+                disabled={isSending}
               >
                 <Text style={styles.buttonText}>TEST</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.commandButton, { backgroundColor: '#4CAF50' }]}
                 onPress={() => sendTestCommand('RESET')}
+                disabled={isSending}
               >
                 <Text style={styles.buttonText}>RESET</Text>
               </TouchableOpacity>
@@ -120,17 +204,17 @@ const DataDebugger = ({ visible, onClose, theme }) => {
           </View>
 
           {/* Raw Data */}
-          <View style={[styles.section, { backgroundColor: theme.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>📦 Last Raw Data</Text>
-            <View style={[styles.dataBox, { backgroundColor: theme.background }]}>
+          <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+            <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>📦 Last Raw Data</Text>
+            <View style={[styles.dataBox, { backgroundColor: theme?.background || '#f8f9fa' }]}>
               <ScrollView style={styles.scrollableData} nestedScrollEnabled>
-                <Text style={[styles.dataText, { color: theme.text }]}>
+                <Text style={[styles.dataText, { color: theme?.text || '#2c3e50' }]}>
                   {liveData.lastRawData || 'No raw data received yet...'}
                 </Text>
               </ScrollView>
             </View>
             {liveData.lastRawData && (
-              <Text style={[styles.dataInfo, { color: theme.textMuted }]}>
+              <Text style={[styles.dataInfo, { color: theme?.textMuted || '#7f8c8d' }]}>
                 Length: {liveData.lastRawData.length} characters
               </Text>
             )}
@@ -138,12 +222,12 @@ const DataDebugger = ({ visible, onClose, theme }) => {
 
           {/* Parsed Data */}
           {liveData.lastParsedData && (
-            <View style={[styles.section, { backgroundColor: theme.card }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>🔍 Last Parsed Data</Text>
-              <View style={[styles.dataBox, { backgroundColor: theme.background }]}>
+            <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+              <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🔍 Last Parsed Data</Text>
+              <View style={[styles.dataBox, { backgroundColor: theme?.background || '#f8f9fa' }]}>
                 <ScrollView style={styles.scrollableData} nestedScrollEnabled>
-                  <Text style={[styles.dataText, { color: theme.text }]}>
-                    {JSON.stringify(liveData.lastParsedData, null, 2)}
+                  <Text style={[styles.dataText, { color: theme?.text || '#2c3e50' }]}>
+                    {truncateJson(safeStringify(liveData.lastParsedData))}
                   </Text>
                 </ScrollView>
               </View>
@@ -152,11 +236,11 @@ const DataDebugger = ({ visible, onClose, theme }) => {
 
           {/* Key Values Monitor */}
           {liveData.lastParsedData && (
-            <View style={[styles.section, { backgroundColor: theme.card }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>📊 Key Values</Text>
+            <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+              <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>📊 Key Values</Text>
               <View style={styles.keyValuesGrid}>
                 <View style={styles.keyValue}>
-                  <Text style={[styles.keyLabel, { color: theme.textMuted }]}>Distance</Text>
+                  <Text style={[styles.keyLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Distance</Text>
                   <Text style={[styles.keyValueText, { 
                     color: liveData.lastParsedData.distance > 0 ? '#4CAF50' : '#f44336' 
                   }]}>
@@ -164,7 +248,7 @@ const DataDebugger = ({ visible, onClose, theme }) => {
                   </Text>
                 </View>
                 <View style={styles.keyValue}>
-                  <Text style={[styles.keyLabel, { color: theme.textMuted }]}>Water Level</Text>
+                  <Text style={[styles.keyLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Water Level</Text>
                   <Text style={[styles.keyValueText, { 
                     color: liveData.lastParsedData.waterLevel > 0 ? '#4CAF50' : '#f44336' 
                   }]}>
@@ -172,14 +256,14 @@ const DataDebugger = ({ visible, onClose, theme }) => {
                   </Text>
                 </View>
                 <View style={styles.keyValue}>
-                  <Text style={[styles.keyLabel, { color: theme.textMuted }]}>Temperature</Text>
+                  <Text style={[styles.keyLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Temperature</Text>
                   <Text style={[styles.keyValueText, { color: '#FF9800' }]}>
                     {liveData.lastParsedData.temperature || 'N/A'} °C
                   </Text>
                 </View>
                 <View style={styles.keyValue}>
-                  <Text style={[styles.keyLabel, { color: theme.textMuted }]}>Status</Text>
-                  <Text style={[styles.keyValueText, { color: theme.text }]}>
+                  <Text style={[styles.keyLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Status</Text>
+                  <Text style={[styles.keyValueText, { color: theme?.text || '#2c3e50' }]}>
                     {liveData.lastParsedData.status || 'N/A'}
                   </Text>
                 </View>
@@ -188,16 +272,16 @@ const DataDebugger = ({ visible, onClose, theme }) => {
           )}
 
           {/* Data Flow History */}
-          <View style={[styles.section, { backgroundColor: theme.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>📋 Recent Activity</Text>
+          <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+            <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>📋 Recent Activity</Text>
             <ScrollView style={styles.historyBox} nestedScrollEnabled>
               {liveData.dataHistory.slice(-10).map((entry, index) => (
-                <Text key={index} style={[styles.historyEntry, { color: theme.textMuted }]}>
+                <Text key={index} style={[styles.historyEntry, { color: theme?.textMuted || '#7f8c8d' }]}>
                   {entry}
                 </Text>
               ))}
               {liveData.dataHistory.length === 0 && (
-                <Text style={[styles.noData, { color: theme.textMuted }]}>
+                <Text style={[styles.noData, { color: theme?.textMuted || '#7f8c8d' }]}>
                   No activity yet...
                 </Text>
               )}
@@ -205,21 +289,14 @@ const DataDebugger = ({ visible, onClose, theme }) => {
           </View>
 
           {/* Troubleshooting */}
-          <View style={[styles.section, { backgroundColor: theme.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>🔧 Troubleshooting</Text>
+          <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+            <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🔧 Troubleshooting</Text>
             <View style={styles.troubleshootList}>
-              <Text style={[styles.troubleshootItem, { color: theme.textMuted }]}>
-                ❌ If "No raw data": ESP32 not sending or BLE connection issue
-              </Text>
-              <Text style={[styles.troubleshootItem, { color: theme.textMuted }]}>
-                ❌ If "distance: 0": ESP32 sensor wiring problem
-              </Text>
-              <Text style={[styles.troubleshootItem, { color: theme.textMuted }]}>
-                ❌ If "waterLevel: 0": ESP32 calculation issue
-              </Text>
-              <Text style={[styles.troubleshootItem, { color: theme.textMuted }]}>
-                ✅ If both distance and waterLevel : 0": System working!
-              </Text>
+              {getTroubleshootingHints().map((hint, index) => (
+                <Text key={index} style={[styles.troubleshootItem, { color: theme?.textMuted || '#7f8c8d' }]}>
+                  {hint}
+                </Text>
+              ))}
             </View>
           </View>
 
@@ -240,7 +317,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   title: {
     fontSize: 18,
@@ -254,6 +331,17 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     padding: 16,
     borderRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      }
+    })
   },
   sectionTitle: {
     fontSize: 16,
@@ -298,7 +386,7 @@ const styles = StyleSheet.create({
   },
   dataText: {
     fontSize: 11,
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     lineHeight: 14,
   },
   dataInfo: {
@@ -329,7 +417,7 @@ const styles = StyleSheet.create({
   },
   historyEntry: {
     fontSize: 11,
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     marginBottom: 2,
     lineHeight: 14,
   },

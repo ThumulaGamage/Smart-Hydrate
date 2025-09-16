@@ -1,5 +1,5 @@
-// src/services/IntakeTracker.js
-// Water Intake Detection and Notification System
+// services/IntakeTracker.js
+// Fixed import paths and implementation for your project structure
 
 import { Alert, AppState, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
@@ -32,6 +32,10 @@ export class IntakeTracker {
     this.connectionStatus = 'disconnected';
     this.deviceData = null;
     
+    // Event listeners
+    this.unsubscribeStats = null;
+    this.appStateSubscription = null;
+    
     this.setupNotifications();
     this.setupAppStateTracking();
   }
@@ -45,23 +49,30 @@ export class IntakeTracker {
       this.bottleCapacity = bottleCapacity;
       
       // Set up BLE data listener
-      this.bleService.setCallbacks({
-        onDataReceived: (data) => this.handleBLEData(data),
-        onConnectionChange: (state) => this.handleConnectionChange(state),
-        onError: (error) => this.handleBLEError(error)
-      });
+      if (this.bleService && this.bleService.setCallbacks) {
+        this.bleService.setCallbacks({
+          onDataReceived: (data) => this.handleBLEData(data),
+          onConnectionChange: (state) => this.handleConnectionChange(state),
+          onError: (error) => this.handleBLEError(error)
+        });
+      }
 
       // Set up daily stats listener
-      this.unsubscribeStats = this.waterBottleService.onTodayStats((stats) => {
-        this.currentDayStats = stats;
-        this.checkGoalNotifications(stats);
-      });
+      if (this.waterBottleService && this.waterBottleService.onTodayStats) {
+        this.unsubscribeStats = this.waterBottleService.onTodayStats((stats) => {
+          this.currentDayStats = stats;
+          this.checkGoalNotifications(stats);
+        });
+      }
 
       // Get initial water level
-      const latestReading = await this.waterBottleService.getLatestReading();
-      if (latestReading) {
-        this.previousWaterLevel = latestReading.waterLevel;
-        this.previousTemperature = latestReading.temperature;
+      if (this.waterBottleService && this.waterBottleService.getLatestReading) {
+        const latestReading = await this.waterBottleService.getLatestReading();
+        if (latestReading && latestReading.length > 0) {
+          const reading = latestReading[0]; // Firebase returns array
+          this.previousWaterLevel = reading.waterLevel;
+          this.previousTemperature = reading.temperature;
+        }
       }
 
       this.isTracking = true;
@@ -85,6 +96,12 @@ export class IntakeTracker {
       
       this.deviceData = data;
       const { waterLevel, temperature, status } = data;
+      
+      // Validate data
+      if (waterLevel === undefined || waterLevel === null) {
+        console.warn('⚠️ Invalid water level data received');
+        return;
+      }
       
       // Convert percentage to actual volume
       const currentVolume = (waterLevel / 100) * this.bottleCapacity;
@@ -121,7 +138,9 @@ export class IntakeTracker {
       const now = new Date();
       
       // Save to database
-      await this.waterBottleService.saveDrinkingEvent(consumedAmount);
+      if (this.waterBottleService && this.waterBottleService.saveDrinkingEvent) {
+        await this.waterBottleService.saveDrinkingEvent(consumedAmount);
+      }
       
       // Update local state
       this.lastDrinkTime = now;
@@ -138,6 +157,7 @@ export class IntakeTracker {
       
     } catch (error) {
       console.error('❌ Error recording drinking event:', error);
+      // Don't send error notification to avoid spam
     }
   }
 
@@ -183,7 +203,7 @@ export class IntakeTracker {
     if (temperature > 35 && this.shouldSendNotification('hot_water')) {
       this.sendNotification({
         title: '🌡️ Water Too Hot',
-        message: `Water temperature is ${temperature}°C. Let it cool down.`,
+        message: `Water temperature is ${Math.round(temperature)}°C. Let it cool down.`,
         type: 'hot_water',
         priority: 'medium'
       });
@@ -216,7 +236,9 @@ export class IntakeTracker {
 
   schedulePeriodicReminders() {
     // Clear existing reminders
-    PushNotification.cancelAllLocalNotifications();
+    if (PushNotification && PushNotification.cancelAllLocalNotifications) {
+      PushNotification.cancelAllLocalNotifications();
+    }
     
     // Schedule next reminder
     if (this.notificationSettings.drinkReminders) {
@@ -225,6 +247,8 @@ export class IntakeTracker {
   }
 
   scheduleNextReminder() {
+    if (!PushNotification || !PushNotification.localNotificationSchedule) return;
+    
     const now = new Date();
     const nextReminder = new Date(now.getTime() + this.notificationSettings.reminderInterval);
     
@@ -233,6 +257,9 @@ export class IntakeTracker {
       // Schedule after quiet hours end
       const nextMorning = new Date(nextReminder);
       nextMorning.setHours(this.notificationSettings.quietHours.end, 0, 0, 0);
+      if (nextMorning < nextReminder) {
+        nextMorning.setDate(nextMorning.getDate() + 1);
+      }
       nextReminder.setTime(nextMorning.getTime());
     }
 
@@ -241,8 +268,7 @@ export class IntakeTracker {
       message: this.getHydrationReminderMessage(),
       date: nextReminder,
       userInfo: { type: 'drink_reminder' },
-      repeatType: 'time',
-      repeatTime: this.notificationSettings.reminderInterval,
+      repeatType: null, // Don't repeat automatically - we'll schedule next one
     });
 
     console.log(`⏰ Next drink reminder scheduled for: ${nextReminder.toLocaleTimeString()}`);
@@ -358,6 +384,11 @@ export class IntakeTracker {
   // ======================
 
   setupNotifications() {
+    if (!PushNotification || !PushNotification.configure) {
+      console.warn('⚠️ PushNotification not available');
+      return;
+    }
+    
     PushNotification.configure({
       onRegister: (token) => {
         console.log('📱 Push notification token:', token);
@@ -383,37 +414,60 @@ export class IntakeTracker {
     });
 
     // Create notification channels for Android
-    if (Platform.OS === 'android') {
+    if (Platform.OS === 'android' && PushNotification.createChannel) {
       PushNotification.createChannel({
         channelId: 'hydration-reminders',
         channelName: 'Hydration Reminders',
         channelDescription: 'Regular reminders to drink water',
+        playSound: true,
+        soundName: 'default',
         importance: 3,
+        vibrate: true,
       });
 
       PushNotification.createChannel({
         channelId: 'device-alerts',
         channelName: 'Device Alerts',
         channelDescription: 'Alerts about bottle status and issues',
+        playSound: true,
+        soundName: 'default',
         importance: 4,
+        vibrate: true,
       });
 
       PushNotification.createChannel({
         channelId: 'goal-achievements',
         channelName: 'Goal Achievements',
         channelDescription: 'Notifications about hydration milestones',
+        playSound: true,
+        soundName: 'default',
         importance: 3,
+        vibrate: true,
       });
     }
   }
 
   sendNotification({ title, message, type, priority = 'medium', data = {} }) {
-    if (!this.notificationSettings[this.getNotificationCategory(type)]) {
+    // Check if notifications are enabled for this category
+    const category = this.getNotificationCategory(type);
+    if (!this.notificationSettings[category]) {
       return; // Category disabled
     }
 
+    // Check quiet hours
     if (this.isQuietHours()) {
       console.log('🔇 Notification suppressed (quiet hours):', title);
+      return;
+    }
+
+    // Check cooldown period
+    if (!this.shouldSendNotification(type)) {
+      console.log('⏱️ Notification suppressed (cooldown):', title);
+      return;
+    }
+
+    if (!PushNotification || !PushNotification.localNotification) {
+      console.warn('⚠️ PushNotification not available for sending');
       return;
     }
 
@@ -427,8 +481,9 @@ export class IntakeTracker {
       importance,
       priority,
       userInfo: { type, ...data },
-      playSound: priority === 'high',
-      vibrate: priority === 'high',
+      playSound: priority === 'high' || priority === 'medium',
+      vibrate: priority === 'high' || priority === 'medium',
+      soundName: priority === 'high' ? 'default' : undefined,
     });
 
     // Track notification time to prevent spam
@@ -457,6 +512,10 @@ export class IntakeTracker {
       'bottle_moving': 5 * 60 * 1000,    // 5 minutes
       'behind_goal': 2 * 60 * 60 * 1000, // 2 hours
       'disconnected': 10 * 60 * 1000,    // 10 minutes
+      'milestone_25': 24 * 60 * 60 * 1000, // 24 hours
+      'milestone_50': 24 * 60 * 60 * 1000,
+      'milestone_75': 24 * 60 * 60 * 1000,
+      'milestone_100': 24 * 60 * 60 * 1000,
     };
     
     return cooldowns[type] || 15 * 60 * 1000; // Default 15 minutes
@@ -476,6 +535,10 @@ export class IntakeTracker {
       'bottle_moving': 'deviceAlerts',
       'drink_reminder': 'drinkReminders',
       'behind_goal': 'drinkReminders',
+      'connected': 'deviceAlerts',
+      'disconnected': 'deviceAlerts',
+      'ble_error': 'deviceAlerts',
+      'refill': 'deviceAlerts',
     };
     
     return categories[type] || 'deviceAlerts';
@@ -513,31 +576,37 @@ export class IntakeTracker {
       case 'drink_reminder':
       case 'behind_goal':
         // Navigate to main screen or open water tracking
+        console.log('📱 Navigate to water tracking screen');
         break;
       case 'low_water':
       case 'empty_bottle':
         // Show refill instructions or nearby water sources
+        console.log('📱 Show refill instructions');
         break;
       case 'milestone_25':
       case 'milestone_50':
       case 'milestone_75':
       case 'milestone_100':
         // Navigate to progress/achievements screen
+        console.log('📱 Navigate to achievements screen');
         break;
       default:
         // Navigate to main app
+        console.log('📱 Navigate to main app');
         break;
     }
   }
 
   setupAppStateTracking() {
-    AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'background') {
-        this.handleAppBackground();
-      } else if (nextAppState === 'active') {
-        this.handleAppForeground();
-      }
-    });
+    if (AppState && AppState.addEventListener) {
+      this.appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+        if (nextAppState === 'background') {
+          this.handleAppBackground();
+        } else if (nextAppState === 'active') {
+          this.handleAppForeground();
+        }
+      });
+    }
   }
 
   handleAppBackground() {
@@ -580,9 +649,17 @@ export class IntakeTracker {
     
     if (this.unsubscribeStats) {
       this.unsubscribeStats();
+      this.unsubscribeStats = null;
     }
     
-    PushNotification.cancelAllLocalNotifications();
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
+    
+    if (PushNotification && PushNotification.cancelAllLocalNotifications) {
+      PushNotification.cancelAllLocalNotifications();
+    }
   }
 }
 

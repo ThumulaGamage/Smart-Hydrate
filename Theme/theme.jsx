@@ -16,7 +16,7 @@ const light = {
   primary: '#2196F3',
   icon: '#2196F3',
   secondary: ' #E3F2FD',
-  text: 'rgb(0, 67, 154)',
+  text: 'rgba(0, 0, 0, 1)',
   textMuted: 'rgb(0, 0, 0)',
   border: 'rgb(111, 162, 255)',
   buttonText: '#FFFFFF',

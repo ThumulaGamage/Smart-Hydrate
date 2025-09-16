@@ -1,3 +1,4 @@
+// EnhancedHomepage.jsx - Fixed WaterBottleService initialization
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -8,18 +9,25 @@ import {
   ScrollView,
   Animated,
   RefreshControl,
-  Dimensions
+  Dimensions,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart } from 'react-native-chart-kit';
 import { useRouter } from 'expo-router';
 import bleService from '../../services/BLEService';
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
 import { useUser } from '../../context/UserDetailContext';
 import useTheme from '../../Theme/theme';
 import { styles } from '../../constant/hometabstyles';
+import DataDebugger from '../DataDebugger';
+
+// Import the working intake components
+import { HydrationGoalCard, WeeklyChart, DrinkingStats, useIntakeService } from './IntakeComponents';
 
 const { width } = Dimensions.get('window');
+
+// Create a ref to hold the current service instance
+const waterBottleServiceRef = React.createRef();
 
 const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel, theme }) => {
   const [animatedValue] = useState(new Animated.Value(0));
@@ -45,11 +53,11 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
   }, [waterLevel]);
 
   const getWaterColor = (level) => {
-    if (level <= 0) return theme.textMuted || '#e0e0e0';
-    if (level < 25) return theme.error || '#f44336';
-    if (level < 50) return theme.warning || '#FF9800';
+    if (level <= 0) return theme?.textMuted || '#e0e0e0';
+    if (level < 25) return theme?.error || '#f44336';
+    if (level < 50) return theme?.warning || '#FF9800';
     if (level < 75) return '#FFC107';
-    return theme.success || '#4CAF50';
+    return theme?.success || '#4CAF50';
   };
 
   const getBottleOpacity = () => isConnected ? 1 : 0.3;
@@ -57,15 +65,15 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
   return (
     <Animated.View style={[styles.bottleContainer, { transform: [{ scale: pulseAnim }] }]}>
       <View style={[styles.bottleOutline, { opacity: getBottleOpacity() }]}>
-        <View style={[styles.bottleCap, { backgroundColor: theme.text || '#34495e' }]} />
+        <View style={[styles.bottleCap, { backgroundColor: theme?.text || '#34495e' }]} />
         <View style={[styles.bottleNeck, { 
-          backgroundColor: theme.card || '#ecf0f1',
-          borderColor: theme.border || '#bdc3c7'
+          backgroundColor: theme?.card || '#ecf0f1',
+          borderColor: theme?.border || '#bdc3c7'
         }]} />
         
         <View style={[styles.bottleBody, { 
-          backgroundColor: theme.card || '#ecf0f1',
-          borderColor: theme.border || '#bdc3c7'
+          backgroundColor: theme?.card || '#ecf0f1',
+          borderColor: theme?.border || '#bdc3c7'
         }]}>
           <Animated.View
             style={[
@@ -84,148 +92,38 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
           <View style={styles.levelMarkers}>
             {[25, 50, 75, 100].map((level) => (
               <View key={level} style={styles.levelMarker}>
-                <View style={[styles.markerLine, { backgroundColor: theme.border || '#bdc3c7' }]} />
-                <Text style={[styles.markerText, { color: theme.textMuted || '#7f8c8d' }]}>{level}%</Text>
+                <View style={[styles.markerLine, { backgroundColor: theme?.border || '#bdc3c7' }]} />
+                <Text style={[styles.markerText, { color: theme?.textMuted || '#7f8c8d' }]}>{level}%</Text>
               </View>
             ))}
           </View>
         </View>
         
-        <View style={[styles.bottleBase, { backgroundColor: theme.text || '#34495e' }]} />
+        <View style={[styles.bottleBase, { backgroundColor: theme?.text || '#34495e' }]} />
       </View>
       
       <View style={styles.waterLevelText}>
         <Text style={[styles.waterPercentage, { color: getWaterColor(waterLevel) }]}>
           {waterLevel.toFixed(1)}%
         </Text>
-        <Text style={[styles.waterLevelLabel, { color: theme.textMuted || '#7f8c8d' }]}>Water Level</Text>
+        <Text style={[styles.waterLevelLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Water Level</Text>
         
         <View style={styles.statusGrid}>
           <View style={styles.statusItem}>
-            <Ionicons name="thermometer" size={16} color={theme.primary || "#2196F3"} />
-            <Text style={[styles.statusValue, { color: theme.text || '#2c3e50' }]}>{temperature.toFixed(1)}°C</Text>
+            <Ionicons name="thermometer" size={16} color={theme?.primary || "#2196F3"} />
+            <Text style={[styles.statusValue, { color: theme?.text || '#2c3e50' }]}>{temperature.toFixed(1)}°C</Text>
           </View>
           <View style={styles.statusItem}>
-            <Ionicons name="battery-half" size={16} color={theme.success || "#4CAF50"} />
-            <Text style={[styles.statusValue, { color: theme.text || '#2c3e50' }]}>{batteryLevel}%</Text>
+            <Ionicons name="battery-half" size={16} color={theme?.success || "#4CAF50"} />
+            <Text style={[styles.statusValue, { color: theme?.text || '#2c3e50' }]}>{batteryLevel}%</Text>
           </View>
           <View style={styles.statusItem}>
-            <View style={[styles.statusDot, { backgroundColor: isConnected ? (theme.success || '#4CAF50') : (theme.error || '#f44336') }]} />
-            <Text style={[styles.statusValue, { color: theme.text || '#2c3e50' }]}>{isConnected ? 'Connected' : 'Offline'}</Text>
+            <View style={[styles.statusDot, { backgroundColor: isConnected ? (theme?.success || '#4CAF50') : (theme?.error || '#f44336') }]} />
+            <Text style={[styles.statusValue, { color: theme?.text || '#2c3e50' }]}>{isConnected ? 'Connected' : 'Offline'}</Text>
           </View>
         </View>
       </View>
     </Animated.View>
-  );
-};
-
-const HydrationProgress = ({ currentIntake, dailyGoal, goalAchieved, theme, lastDrinkVolume, showAnimation }) => {
-  const progress = Math.min((currentIntake / dailyGoal) * 100, 100);
-  const [animatedProgress] = useState(new Animated.Value(0));
-  const [pulseAnim] = useState(new Animated.Value(1));
-  
-  useEffect(() => {
-    Animated.timing(animatedProgress, {
-      toValue: progress,
-      duration: 800,
-      useNativeDriver: false,
-    }).start();
-  }, [progress]);
-
-  useEffect(() => {
-    if (showAnimation && lastDrinkVolume > 0) {
-      // Pulse animation when new drink is detected
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.1, duration: 200, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [lastDrinkVolume, showAnimation]);
-  
-  return (
-    <Animated.View style={[styles.progressContainer, { transform: [{ scale: pulseAnim }] }]}>
-      <View style={styles.progressHeader}>
-        <Text style={[styles.progressTitle, { color: theme.text || '#2c3e50' }]}>Today's Hydration Goal</Text>
-        {goalAchieved && <Ionicons name="trophy" size={20} color="#FFD700" />}
-        {lastDrinkVolume > 0 && showAnimation && (
-          <View style={styles.newDrinkBadge}>
-            <Text style={styles.newDrinkText}>+{lastDrinkVolume}ml</Text>
-          </View>
-        )}
-      </View>
-      
-      <View style={styles.progressStats}>
-        <Text style={[styles.progressCurrent, { color: theme.primary || '#3498db' }]}>{Math.round(currentIntake)}ml</Text>
-        <Text style={[styles.progressGoal, { color: theme.textMuted || '#7f8c8d' }]}>of {dailyGoal}ml</Text>
-      </View>
-      
-      <View style={[styles.progressBar, { backgroundColor: theme.background || '#ecf0f1' }]}>
-        <Animated.View style={[styles.progressFill, { 
-          width: animatedProgress.interpolate({
-            inputRange: [0, 100],
-            outputRange: ['0%', '100%'],
-            extrapolate: 'clamp',
-          }),
-          backgroundColor: goalAchieved ? '#4CAF50' : (theme.primary || '#3498db')
-        }]} />
-        <View style={styles.progressOverlay}>
-          <Text style={styles.progressPercentage}>{Math.round(progress)}%</Text>
-        </View>
-      </View>
-      
-      <View style={styles.progressFooter}>
-        <Text style={[styles.remainingText, { color: theme.textMuted || '#7f8c8d' }]}>
-          {goalAchieved ? '🎉 Goal Achieved!' : `${Math.max(0, dailyGoal - currentIntake)}ml remaining`}
-        </Text>
-      </View>
-    </Animated.View>
-  );
-};
-
-const WeeklyChart = ({ weeklyData, theme }) => {
-  if (!weeklyData || weeklyData.length === 0) {
-    return (
-      <View style={[styles.chartPlaceholder, { backgroundColor: theme.background || '#f8f9fa' }]}>
-        <Ionicons name="bar-chart-outline" size={48} color={theme.textMuted || "#ddd"} />
-        <Text style={[styles.chartPlaceholderText, { color: theme.textMuted || "#adb5bd" }]}>No data available</Text>
-      </View>
-    );
-  }
-
-  const chartData = {
-    labels: weeklyData.map(d => d.date.split('-')[2]),
-    datasets: [{
-      data: weeklyData.map(d => (d.totalConsumed / d.goal) * 100),
-      color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`,
-      strokeWidth: 3
-    }]
-  };
-
-  return (
-    <View style={styles.chartContainer}>
-      <Text style={[styles.chartTitle, { color: theme.text || '#2c3e50' }]}>Weekly Progress</Text>
-      <LineChart
-        data={chartData}
-        width={width - 80}
-        height={200}
-        chartConfig={{
-          backgroundColor: theme.card || '#ffffff',
-          backgroundGradientFrom: theme.card || '#ffffff',
-          backgroundGradientTo: theme.card || '#ffffff',
-          decimalPlaces: 0,
-          color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-          style: { borderRadius: 16 },
-          propsForDots: {
-            r: "4",
-            strokeWidth: "2",
-            stroke: theme.primary || "#3498db"
-          }
-        }}
-        bezier
-        style={styles.chart}
-      />
-    </View>
   );
 };
 
@@ -264,32 +162,32 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
 
   if (recommendations.length === 0) {
     return (
-      <View style={[styles.recommendationsContainer, { backgroundColor: theme.background || '#f8f9fa' }]}>
+      <View style={[styles.recommendationsContainer, { backgroundColor: theme?.background || '#f8f9fa' }]}>
         <View style={styles.noRecommendations}>
-          <Ionicons name="checkmark-circle" size={32} color={theme.success || "#4CAF50"} />
-          <Text style={[styles.noRecommendationsText, { color: theme.success || "#4CAF50" }]}>You're doing great! Keep it up!</Text>
+          <Ionicons name="checkmark-circle" size={32} color={theme?.success || "#4CAF50"} />
+          <Text style={[styles.noRecommendationsText, { color: theme?.success || "#4CAF50" }]}>You're doing great! Keep it up!</Text>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.recommendationsContainer, { backgroundColor: theme.background || '#f8f9fa' }]}>
-      <Text style={[styles.recommendationsTitle, { color: theme.text || '#2c3e50' }]}>💡 Smart Recommendations</Text>
+    <View style={[styles.recommendationsContainer, { backgroundColor: theme?.background || '#f8f9fa' }]}>
+      <Text style={[styles.recommendationsTitle, { color: theme?.text || '#2c3e50' }]}>💡 Smart Recommendations</Text>
       {recommendations.map((rec, index) => (
         <View key={index} style={[
           styles.recommendationItem,
           { 
-            backgroundColor: theme.card || 'white',
-            borderLeftColor: rec.priority === 'high' ? (theme.error || '#f44336') : (theme.warning || '#FF9800')
+            backgroundColor: theme?.card || 'white',
+            borderLeftColor: rec.priority === 'high' ? (theme?.error || '#f44336') : (theme?.warning || '#FF9800')
           }
         ]}>
           <Ionicons 
             name={rec.icon} 
             size={20} 
-            color={rec.priority === 'high' ? (theme.error || '#f44336') : (theme.warning || '#FF9800')} 
+            color={rec.priority === 'high' ? (theme?.error || '#f44336') : (theme?.warning || '#FF9800')} 
           />
-          <Text style={[styles.recommendationText, { color: theme.text || '#495057' }]}>{rec.text}</Text>
+          <Text style={[styles.recommendationText, { color: theme?.text || '#495057' }]}>{rec.text}</Text>
         </View>
       ))}
     </View>
@@ -312,10 +210,11 @@ export default function EnhancedHomepage() {
     waterLevel: 75,
     temperature: 22.5,
     batteryLevel: 85,
+    status: 'ok',
     lastUpdate: null,
   });
 
-  const lastReportedWaterLevel = useRef(null);
+  const lastReportedWaterLevel = useRef(75);
   const [firebaseData, setFirebaseData] = useState({
     todayStats: null,
     weeklyData: [],
@@ -331,70 +230,102 @@ export default function EnhancedHomepage() {
   const [lastDrinkVolume, setLastDrinkVolume] = useState(0);
   const [showDrinkAnimation, setShowDrinkAnimation] = useState(false);
   const animationTimeoutRef = useRef(null);
+  
+  // Store unsubscribe functions for cleanup
+  const unsubscribersRef = useRef([]);
+  
+  // Data debugger state
+  const [showDebugger, setShowDebugger] = useState(false);
+
+  // Use the intake service hook
+  const { dailyStats, weeklyData, sensorData: intakeSensorData } = useIntakeService(user);
 
   useEffect(() => {
     initializeServices();
     return cleanup;
   }, []);
 
+  // Update ref when service changes
+  useEffect(() => {
+    waterBottleServiceRef.current = waterBottleService;
+  }, [waterBottleService]);
+
   // Enhanced function to update hydration progress with animation
   const updateHydrationProgress = useCallback(async (volumeConsumed) => {
-    if (!waterBottleService) return;
-
-    try {
-      console.log(`💧 Updating hydration progress: +${volumeConsumed.toFixed(0)}ml`);
-      
-      // Show drink animation
-      setLastDrinkVolume(Math.round(volumeConsumed));
-      setShowDrinkAnimation(true);
-      
-      // Save drinking event to database
-      const drinkingEvent = {
-        volume: volumeConsumed,
-        timestamp: new Date().toISOString(),
-        waterLevel: sensorData.waterLevel,
-        temperature: sensorData.temperature
-      };
-      
-      await waterBottleService.saveDrinkingEvent(drinkingEvent);
-      
-      // Immediately refresh today's stats for real-time UI update
-      const updatedStats = await waterBottleService.getTodayStats();
-      console.log('📊 Updated today stats:', updatedStats);
-      
-      setFirebaseData(prev => ({ 
-        ...prev, 
-        todayStats: updatedStats 
-      }));
-
-      // Clear animation after 3 seconds
-      if (animationTimeoutRef.current) {
-        clearTimeout(animationTimeoutRef.current);
-      }
-      
-      animationTimeoutRef.current = setTimeout(() => {
-        setShowDrinkAnimation(false);
-        setLastDrinkVolume(0);
-      }, 3000);
-      
-    } catch (error) {
-      console.error('❌ Failed to update hydration progress:', error);
-      Alert.alert('Error', 'Failed to update hydration progress. Please try again.');
+    console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml`);
+    
+    // Show drink animation immediately
+    setLastDrinkVolume(Math.round(volumeConsumed));
+    setShowDrinkAnimation(true);
+    
+    // Clear animation after 3 seconds
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
     }
-  }, [waterBottleService, sensorData.waterLevel, sensorData.temperature]);
+    
+    animationTimeoutRef.current = setTimeout(() => {
+      setShowDrinkAnimation(false);
+      setLastDrinkVolume(0);
+    }, 3000);
+
+    // Try to save to database using the current service reference
+    const currentService = waterBottleServiceRef.current;
+    
+    if (currentService) {
+      try {
+        console.log(`💾 Saving drinking event to database: ${volumeConsumed.toFixed(0)}ml`);
+        await currentService.saveDrinkingEvent(volumeConsumed);
+        console.log('✅ Drinking event saved successfully to database');
+        
+        // Refresh Firebase data to reflect the update
+        try {
+          const updatedStats = await currentService.getTodayStats();
+          setFirebaseData(prev => ({
+            ...prev,
+            todayStats: updatedStats
+          }));
+        } catch (refreshError) {
+          console.warn('⚠️ Could not refresh stats after drink:', refreshError);
+        }
+      } catch (error) {
+        console.error('❌ Failed to save drinking event to database:', error);
+        Alert.alert('Database Error', 'Failed to save drinking event. Please try again.');
+      }
+    } else {
+      console.warn('⚠️ WaterBottleService not ready, cannot save to database');
+      Alert.alert(
+        'Service Not Ready', 
+        'Drink detected but database service not ready. The drink will be saved when the service is available.',
+        [{ text: 'OK' }]
+      );
+    }
+  }, []);
 
   const initializeServices = async () => {
     try {
       initializeBLE();
       
       if (auth.currentUser) {
+        console.log('🔧 Initializing WaterBottleService...');
+        
+        // Initialize the service immediately
         const service = new WaterBottleService(auth.currentUser.uid);
+        
+        // Set both state and ref
         setWaterBottleService(service);
+        waterBottleServiceRef.current = service;
+        
+        // Load initial data
         await loadFirebaseData(service);
         setupFirebaseListeners(service);
+        
+        console.log('✅ WaterBottleService initialized and ready');
+      } else {
+        console.warn('⚠️ No authenticated user found');
       }
     } catch (error) {
       console.error('❌ Initialization error:', error);
+      Alert.alert('Initialization Error', 'Failed to initialize services. Please restart the app.');
     }
   };
 
@@ -402,14 +333,20 @@ export default function EnhancedHomepage() {
     try {
       bleService.setCallbacks({
         onConnectionChange: (state) => {
+          console.log('🔄 BLE connection state changed:', state);
           setBleState(state);
         },
         onDataReceived: async (data) => {
+          console.log('📡 BLE data received:', data);
+          
           let newWaterLevel = data.waterLevel;
           const currentTimestamp = new Date();
 
           // Validate and sanitize water level
-          if (newWaterLevel === undefined || newWaterLevel === null) return;
+          if (newWaterLevel === undefined || newWaterLevel === null) {
+            console.warn('⚠️ Invalid water level data received');
+            return;
+          }
           newWaterLevel = Math.max(0, Math.min(100, newWaterLevel)); // Clamp between 0-100
 
           // Enhanced drink detection with improved thresholds
@@ -449,6 +386,7 @@ export default function EnhancedHomepage() {
             waterLevel: newWaterLevel,
             temperature: data.temperature || prev.temperature,
             batteryLevel: data.batteryLevel || prev.batteryLevel,
+            status: data.status || prev.status,
             lastUpdate: currentTimestamp
           }));
           
@@ -484,60 +422,86 @@ export default function EnhancedHomepage() {
         profile: profile || null
       });
 
-      if (latestReading) {
+      if (latestReading && latestReading.length > 0) {
+        const reading = latestReading[0]; // Firebase returns array
         setSensorData(prev => ({
           ...prev,
-          waterLevel: latestReading.waterLevel || prev.waterLevel,
-          temperature: latestReading.temperature || prev.temperature,
-          batteryLevel: latestReading.batteryLevel || prev.batteryLevel,
-          lastUpdate: new Date(latestReading.timestamp)
+          waterLevel: reading.waterLevel || prev.waterLevel,
+          temperature: reading.temperature || prev.temperature,
+          batteryLevel: reading.batteryLevel || prev.batteryLevel,
+          status: reading.status || prev.status,
+          lastUpdate: reading.timestamp?.toDate ? reading.timestamp.toDate() : new Date(reading.timestamp)
         }));
-        lastReportedWaterLevel.current = latestReading.waterLevel;
+        lastReportedWaterLevel.current = reading.waterLevel;
       }
     } catch (error) {
       console.error('❌ Error loading Firebase data:', error);
+      Alert.alert('Data Load Error', 'Failed to load user data. Some features may not work properly.');
     }
   };
 
   const setupFirebaseListeners = (service) => {
-    const unsubscribers = [];
-
     try {
-      // Enhanced listener for today's stats with better error handling
-      if (service.onTodayStats) {
-        const unsubscribe = service.onTodayStats((stats) => {
-          console.log('🔄 Firebase onTodayStats listener triggered:', stats);
-          setFirebaseData(prev => ({ 
-            ...prev, 
-            todayStats: stats 
-          }));
-        });
-        unsubscribers.push(unsubscribe);
-      }
+      // Clear any existing listeners
+      cleanupListeners();
 
-      if (service.onLatestReadings) {
-        const unsubscribe = service.onLatestReadings((readings) => {
-          if (readings && readings.length > 0) {
-            const latest = readings[0];
-            console.log('🔄 Latest reading updated:', latest);
-            setFirebaseData(prev => ({ ...prev, latestReading: latest }));
-            setSensorData(prev => ({
-              ...prev,
-              waterLevel: latest.waterLevel || prev.waterLevel,
-              temperature: latest.temperature || prev.temperature,
-              batteryLevel: latest.batteryLevel || prev.batteryLevel,
-              lastUpdate: new Date(latest.timestamp)
-            }));
-          }
-        });
-        unsubscribers.push(unsubscribe);
-      }
+      console.log('🔄 Setting up Firebase listeners...');
+
+      // Enhanced listener for today's stats with better error handling
+      const todayStatsUnsubscribe = service.onTodayStats((stats) => {
+        console.log('🔄 Firebase onTodayStats listener triggered:', stats);
+        setFirebaseData(prev => ({ 
+          ...prev, 
+          todayStats: stats 
+        }));
+      });
+
+      const readingsUnsubscribe = service.onLatestReadings((readings) => {
+        if (readings && readings.length > 0) {
+          const latest = readings[0];
+          console.log('🔄 Latest reading updated:', latest);
+          setFirebaseData(prev => ({ ...prev, latestReading: latest }));
+          
+          // Handle Firestore timestamp conversion
+          const timestamp = latest.timestamp?.toDate ? latest.timestamp.toDate() : new Date(latest.timestamp);
+          
+          setSensorData(prev => ({
+            ...prev,
+            waterLevel: latest.waterLevel || prev.waterLevel,
+            temperature: latest.temperature || prev.temperature,
+            batteryLevel: latest.batteryLevel || prev.batteryLevel,
+            status: latest.status || prev.status,
+            lastUpdate: timestamp
+          }));
+        }
+      });
+
+      const profileUnsubscribe = service.onProfileChanges((profile) => {
+        console.log('🔄 Profile updated:', profile);
+        setFirebaseData(prev => ({ 
+          ...prev, 
+          profile: profile 
+        }));
+      });
+
+      // Store unsubscribe functions
+      unsubscribersRef.current = [
+        todayStatsUnsubscribe,
+        readingsUnsubscribe, 
+        profileUnsubscribe
+      ].filter(Boolean); // Remove any undefined functions
+
+      console.log(`✅ Set up ${unsubscribersRef.current.length} Firebase listeners`);
+
     } catch (error) {
       console.error('❌ Error setting up Firebase listeners:', error);
     }
+  };
 
-    return () => {
-      unsubscribers.forEach(unsubscribe => {
+  const cleanupListeners = () => {
+    if (unsubscribersRef.current && unsubscribersRef.current.length > 0) {
+      console.log(`🧹 Cleaning up ${unsubscribersRef.current.length} Firebase listeners`);
+      unsubscribersRef.current.forEach(unsubscribe => {
         try {
           if (typeof unsubscribe === 'function') {
             unsubscribe();
@@ -546,23 +510,34 @@ export default function EnhancedHomepage() {
           console.warn('⚠️ Error cleaning up listener:', error);
         }
       });
-    };
+      unsubscribersRef.current = [];
+    }
   };
 
   const cleanup = () => {
+    console.log('🧹 Starting cleanup...');
+    
+    // Cleanup Firebase listeners
+    cleanupListeners();
+    
+    // Cleanup BLE
     if (bleService?.isConnected) {
-      bleService.disconnect().catch(e => console.log('Cleanup error:', e));
+      bleService.disconnect().catch(e => console.log('BLE cleanup error:', e));
     }
+    
+    // Cleanup animations
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      if (waterBottleService) {
-        await loadFirebaseData(waterBottleService);
+      const currentService = waterBottleServiceRef.current;
+      if (currentService) {
+        await loadFirebaseData(currentService);
       }
       if (bleState.isConnected) {
         await sendCommand('GET_DATA');
@@ -612,7 +587,12 @@ export default function EnhancedHomepage() {
   };
 
   const getBottleCapacity = () => {
-    return firebaseData.profile?.bottleCapacity || 500;
+    // First check profile, then fallback to default
+    const profileCapacity = firebaseData.profile?.bottleCapacity;
+    if (profileCapacity && profileCapacity > 0) {
+      return profileCapacity;
+    }
+    return 500; // Default bottle capacity
   };
 
   const getUserDisplayName = () => {
@@ -632,11 +612,17 @@ export default function EnhancedHomepage() {
   };
 
   const getTodayGoal = () => {
-    return firebaseData.profile?.dailyGoal || firebaseData.todayStats?.goal || 2000;
+    if (firebaseData.profile?.dailyGoal !== undefined && firebaseData.profile?.dailyGoal !== null) {
+      return firebaseData.profile.dailyGoal;
+    }
+    if (firebaseData.todayStats?.goal !== undefined && firebaseData.todayStats?.goal !== null) {
+      return firebaseData.todayStats.goal;
+    }
+    return 2000; // default
   };
 
   const getTodayIntake = () => {
-    return firebaseData.todayStats?.totalConsumed || 0;
+    return firebaseData.todayStats?.totalConsumed ?? 0;
   };
 
   const isGoalAchieved = () => {
@@ -654,42 +640,56 @@ export default function EnhancedHomepage() {
     };
   };
 
+  // Get actual daily stats from Firebase or fallback to sample data
+  const actualDailyStats = firebaseData.todayStats || dailyStats;
+  const actualWeeklyData = firebaseData.weeklyData.length > 0 ? firebaseData.weeklyData : weeklyData;
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.background || '#f5f7fa' }]}>
+    <View style={[styles.container, { backgroundColor: theme?.background || '#f5f7fa' }]}>
       <ScrollView 
         style={styles.scrollView}
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
             onRefresh={onRefresh}
-            tintColor={theme.primary}
-            colors={[theme.primary || '#667eea']}
+            tintColor={theme?.primary}
+            colors={[theme?.primary || '#667eea']}
           />
         }
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={[styles.header, { backgroundColor: theme.primary || '#667eea' }]}>
+        <View style={[styles.header, { backgroundColor: theme?.primary || '#667eea' }]}>
           <View style={styles.headerContent}>
             <View>
               <Text style={styles.greeting}>Hello, {getUserDisplayName()}! 👋</Text>
               <Text style={styles.subtitle}>Stay hydrated & healthy today</Text>
             </View>
+            <TouchableOpacity 
+              onPress={() => setShowDebugger(true)}
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                padding: 8,
+                borderRadius: 20
+              }}
+            >
+              <Ionicons name="bug" size={20} color="white" />
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* Connection Section */}
-        <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text || '#2c3e50' }]}>🔗 Smart Bottle Connection</Text>
+        <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+          <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🔗 Smart Bottle Connection</Text>
           
-          <View style={[styles.connectionStatus, { backgroundColor: theme.background || '#f8f9fa' }]}>
+          <View style={[styles.connectionStatus, { backgroundColor: theme?.background || '#f8f9fa' }]}>
             <Ionicons 
               name={bleState.isConnected ? "bluetooth" : "bluetooth-outline"} 
               size={24} 
-              color={bleState.isConnected ? (theme.success || "#4CAF50") : (theme.textMuted || "#999")} 
+              color={bleState.isConnected ? (theme?.success || "#4CAF50") : (theme?.textMuted || "#999")} 
             />
             <Text style={[styles.statusTextMain, { 
-              color: bleState.isConnected ? (theme.success || "#4CAF50") : (theme.textMuted || "#999")
+              color: bleState.isConnected ? (theme?.success || "#4CAF50") : (theme?.textMuted || "#999")
             }]}>
               {bleState.isConnected ? `Connected to ${bleState.deviceName}` : 'Not Connected'}
             </Text>
@@ -698,7 +698,7 @@ export default function EnhancedHomepage() {
           {bleState.isConnected ? (
             <View style={styles.buttonRow}>
               <TouchableOpacity 
-                style={[styles.button, { backgroundColor: theme.primary || '#3498db' }]}
+                style={[styles.button, { backgroundColor: theme?.primary || '#3498db' }]}
                 onPress={() => sendCommand('GET_DATA')}
               >
                 <Ionicons name="refresh" size={16} color="white" />
@@ -706,7 +706,7 @@ export default function EnhancedHomepage() {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.button, { backgroundColor: theme.warning || '#f39c12' }]}
+                style={[styles.button, { backgroundColor: theme?.warning || '#f39c12' }]}
                 onPress={() => sendCommand('CALIBRATE')}
               >
                 <Ionicons name="settings" size={16} color="white" />
@@ -714,7 +714,7 @@ export default function EnhancedHomepage() {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.button, { backgroundColor: theme.error || '#e74c3c' }]}
+                style={[styles.button, { backgroundColor: theme?.error || '#e74c3c' }]}
                 onPress={handleDisconnect}
               >
                 <Ionicons name="close-circle" size={16} color="white" />
@@ -723,7 +723,7 @@ export default function EnhancedHomepage() {
             </View>
           ) : (
             <TouchableOpacity 
-              style={[styles.button, { backgroundColor: theme.success || '#27ae60' }]}
+              style={[styles.button, { backgroundColor: theme?.success || '#27ae60' }]}
               onPress={handleConnect}
               disabled={bleState.isConnecting}
             >
@@ -745,7 +745,7 @@ export default function EnhancedHomepage() {
         </View>
 
         {/* Water Bottle Visual */}
-        <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
+        <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
           <WaterBottleVisual 
             waterLevel={sensorData.waterLevel} 
             isConnected={bleState.isConnected}
@@ -754,28 +754,41 @@ export default function EnhancedHomepage() {
             theme={theme}
           />
         </View>
-        <View style={[styles.section, { backgroundColor: theme.card || 'white', alignItems: 'center', padding: 16 }]}>
-  <Ionicons name="thermometer" size={32} color={theme.primary || "#2196F3"} />
-  <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text || '#2c3e50' }}>
-    {sensorData.temperature.toFixed(1)}°C
-  </Text>
-  <Text style={{ color: theme.textMuted || '#7f8c8d' }}>Current Water Temperature</Text>
-</View>
 
-        {/* Enhanced Hydration Progress with Auto-Update */}
-        <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
-          <HydrationProgress 
-            currentIntake={getTodayIntake()}
-            dailyGoal={getTodayGoal()}
-            goalAchieved={isGoalAchieved()}
-            theme={theme}
-            lastDrinkVolume={lastDrinkVolume}
-            showAnimation={showDrinkAnimation}
-          />
+        {/* Temperature Display */}
+        <View style={[styles.section, { backgroundColor: theme?.card || 'white', alignItems: 'center', padding: 16 }]}>
+          <Ionicons name="thermometer" size={32} color={theme?.primary || "#2196F3"} />
+          <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme?.text || '#2c3e50' }}>
+            {sensorData.temperature.toFixed(1)}°C
+          </Text>
+          <Text style={{ color: theme?.textMuted || '#7f8c8d' }}>
+            Current Water Temperature
+          </Text>
+          <Text style={{ 
+            color: theme?.textMuted || '#7f8c8d', 
+            fontSize: 12, 
+            marginTop: 4,
+            fontStyle: 'italic'
+          }}>
+            Status: {sensorData.status}
+          </Text>
         </View>
 
+        {/* Hydration Goal Card - Using the restored component */}
+        <HydrationGoalCard 
+          dailyStats={actualDailyStats}
+          theme={theme}
+        />
+
+        {/* Drinking Stats - Using the restored component */}
+        <DrinkingStats 
+          dailyStats={actualDailyStats}
+          sensorData={sensorData}
+          theme={theme}
+        />
+
         {/* Smart Recommendations */}
-        <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
+        <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
           <SmartRecommendations 
             waterLevel={sensorData.waterLevel}
             temperature={sensorData.temperature}
@@ -784,65 +797,79 @@ export default function EnhancedHomepage() {
           />
         </View>
 
-        {/* Weekly Chart */}
-        {firebaseData.weeklyData.length > 0 && (
-          <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
-            <View style={styles.chartHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.text || '#2c3e50' }]}>📊 Weekly Progress</Text>
-              <TouchableOpacity onPress={() => setShowChart(!showChart)}>
-                <Ionicons 
-                  name={showChart ? "chevron-up" : "chevron-down"} 
-                  size={24} 
-                  color={theme.primary || "#3498db"} 
-                />
-              </TouchableOpacity>
-            </View>
-            {showChart && <WeeklyChart weeklyData={firebaseData.weeklyData} theme={theme} />}
-          </View>
-        )}
+        {/* Weekly Chart - Using the restored component */}
+<View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+  <View style={{
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  }}>
+    <Text style={{
+      color: theme?.text || '#2c3e50',
+      fontSize: 18,
+      fontWeight: 'bold'
+    }}>
+      📊 Hydration Progress
+    </Text>
+  
+  </View>
+  
+  {/* Chart content - always render the container, toggle the actual chart */}
+  <View style={{
+    overflow: 'hidden',
+    borderRadius: 16,
+    marginLeft: -30,
+    marginRight: -30,
+    marginBottom: -30,
+    
 
-        {/* Today's Summary */}
-        <View style={[styles.section, { backgroundColor: theme.card || 'white' }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text || '#2c3e50' }]}>📈 Today's Summary</Text>
-          <View style={styles.summaryGrid}>
-            <View style={[styles.summaryCard, { 
-              backgroundColor: theme.background || '#f8f9fa',
-              borderColor: theme.border || '#e9ecef'
-            }]}>
-              <Ionicons name="water" size={24} color={theme.primary || "#3498db"} />
-              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{Math.round(getDisplayStats().totalConsumed)}ml</Text>
-              <Text style={[styles.summaryLabel, { color: theme.textMuted || '#6c757d' }]}>Total Intake</Text>
-            </View>
-            <View style={[styles.summaryCard, { 
-              backgroundColor: theme.background || '#f8f9fa',
-              borderColor: theme.border || '#e9ecef'
-            }]}>
-              <Ionicons name="trending-up" size={24} color={theme.success || "#27ae60"} />
-              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{getDisplayStats().drinkingFrequency || 0}</Text>
-              <Text style={[styles.summaryLabel, { color: theme.textMuted || '#6c757d' }]}>Drinks Today</Text>
-            </View>
-            <View style={[styles.summaryCard, { 
-              backgroundColor: theme.background || '#f8f9fa',
-              borderColor: theme.border || '#e9ecef'
-            }]}>
-              <Ionicons name="thermometer" size={24} color={theme.error || "#e74c3c"} />
-              <Text style={[styles.summaryValue, { color: theme.text || '#2c3e50' }]}>{getDisplayStats().averageTemperature?.toFixed(1) || '--'}°C</Text>
-              <Text style={[styles.summaryLabel, { color: theme.textMuted || '#6c757d' }]}>Avg Temp</Text>
-            </View>
-          </View>
-        </View>
+
+  }}>
+    <WeeklyChart 
+      weeklyData={actualWeeklyData} 
+      dailyStats={actualDailyStats}
+      theme={theme} 
+    />
+  </View>
+</View>
 
         {/* Goal Achievement Celebration */}
         {isGoalAchieved() && showDrinkAnimation && (
-          <View style={[styles.section, { backgroundColor: theme.success || '#4CAF50' }]}>
-            <View style={styles.celebrationContainer}>
-              <Text style={styles.celebrationEmoji}>🎉</Text>
-              <Text style={styles.celebrationTitle}>Congratulations!</Text>
-              <Text style={styles.celebrationText}>You've reached your daily hydration goal!</Text>
+          <View style={[styles.section, { backgroundColor: theme?.success || '#4CAF50' }]}>
+            <View style={{
+              padding: 20,
+              alignItems: 'center'
+            }}>
+              <Text style={{
+                fontSize: 48,
+                marginBottom: 10
+              }}>🎉</Text>
+              <Text style={{
+                fontSize: 20,
+                fontWeight: 'bold',
+                color: 'white',
+                marginBottom: 5
+              }}>
+                Congratulations!
+              </Text>
+              <Text style={{
+                color: 'white',
+                textAlign: 'center'
+              }}>
+                You've reached your daily hydration goal!
+              </Text>
             </View>
           </View>
         )}
       </ScrollView>
+      
+      {/* Data Debugger Modal */}
+      <DataDebugger 
+        visible={showDebugger}
+        onClose={() => setShowDebugger(false)}
+        theme={theme}
+      />
     </View>
   );
 }

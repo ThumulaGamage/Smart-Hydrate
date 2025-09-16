@@ -25,12 +25,32 @@ import ThemedView from '../../components/ThemedView';
 
 const { width } = Dimensions.get('window');
 
-// Stats Card Component
-const StatsCard = ({ icon, title, value, subtitle, color, onPress }) => {
+// Stats Card Component - Updated for new users
+const StatsCard = ({ icon, title, value, subtitle, color, isNewUser = false }) => {
   const theme = useTheme();
   
+  if (isNewUser) {
+    return (
+      <View style={[styles.statsCard, { 
+        backgroundColor: theme.card,
+        borderWidth: 2,
+        borderColor: theme.border || '#E0E0E0',
+        borderStyle: 'dashed'
+      }]}>
+        <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
+          <Ionicons name={icon} size={24} color={color + '80'} />
+        </View>
+        <View style={styles.statsContent}>
+          <ThemedText style={[styles.statsValue, { color: theme.textMuted }]}>--</ThemedText>
+          <ThemedText style={[styles.statsTitle, { color: theme.textMuted }]}>{title}</ThemedText>
+          <ThemedText style={[styles.statsSubtitle, { color: theme.textMuted }]}>Start tracking</ThemedText>
+        </View>
+      </View>
+    );
+  }
+  
   return (
-    <TouchableOpacity style={[styles.statsCard, { backgroundColor: theme.card }]} onPress={onPress}>
+    <View style={[styles.statsCard, { backgroundColor: theme.card }]}>
       <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
         <Ionicons name={icon} size={24} color={color} />
       </View>
@@ -41,7 +61,7 @@ const StatsCard = ({ icon, title, value, subtitle, color, onPress }) => {
           <ThemedText style={[styles.statsSubtitle, { color: theme.textMuted }]}>{subtitle}</ThemedText>
         )}
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
@@ -72,33 +92,6 @@ const AchievementBadge = ({ icon, title, achieved, description }) => {
   );
 };
 
-// Settings Option Component
-const SettingsOption = ({ icon, title, subtitle, onPress, showArrow = true, rightElement }) => {
-  const theme = useTheme();
-  
-  return (
-    <TouchableOpacity style={[styles.settingsOption, { backgroundColor: theme.card }]} onPress={onPress}>
-      <View style={styles.settingsLeft}>
-        <View style={[styles.settingsIconContainer, { backgroundColor: theme.primary + '15' }]}>
-          <Ionicons name={icon} size={20} color={theme.primary} />
-        </View>
-        <View style={styles.settingsContent}>
-          <ThemedText style={[styles.settingsTitle, { color: theme.text }]}>{title}</ThemedText>
-          {subtitle && (
-            <ThemedText style={[styles.settingsSubtitle, { color: theme.textMuted }]}>{subtitle}</ThemedText>
-          )}
-        </View>
-      </View>
-      <View style={styles.settingsRight}>
-        {rightElement && rightElement}
-        {showArrow && (
-          <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-};
-
 export default function EnhancedUserTab() {
   const { user, userDetails, logout } = useUser();
   const router = useRouter();
@@ -109,23 +102,18 @@ export default function EnhancedUserTab() {
     averageDailyIntake: 0,
     goalAchievementRate: 0,
     currentStreak: 0,
-    totalLitersConsumed: 0
+    totalLitersConsumed: 0,
+    isNewUser: true
   });
   
   const [profileData, setProfileData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadUserData();
-    
-    // Debug logging to see what user data is available
-    console.log('🔍 User Profile Debug:');
-    console.log('userDetails:', userDetails);
-    console.log('user:', user);
-    console.log('auth.currentUser:', auth.currentUser);
-    console.log('Generated name:', getUserName());
     
     // Fade in animation
     Animated.timing(fadeAnim, {
@@ -137,39 +125,76 @@ export default function EnhancedUserTab() {
 
   const loadUserData = async () => {
     try {
+      setLoading(true);
+      
       if (auth.currentUser) {
         const waterBottleService = new WaterBottleService(auth.currentUser.uid);
         
         // Load user profile and stats
-        const [profile, todayStats, weeklyData] = await Promise.all([
+        const [profile, todayStats, weeklyResult] = await Promise.all([
           waterBottleService.getUserProfile().catch(() => null),
-          waterBottleService.getTodayStats().catch(() => null),
-          waterBottleService.getWeeklyStats().catch(() => [])
+          waterBottleService.getTodayStats().catch(() => ({ isNewUser: true, totalConsumed: 0 })),
+          waterBottleService.getWeeklyStats().catch(() => ({ data: [], isNewUser: true }))
         ]);
 
         setProfileData(profile);
 
-        // Calculate user statistics
-        const totalConsumed = weeklyData.reduce((sum, day) => sum + (day.totalConsumed || 0), 0);
-        const achievedDays = weeklyData.filter(day => day.goalAchieved).length;
-        const avgDaily = weeklyData.length > 0 ? totalConsumed / weeklyData.length : 0;
+        const weeklyData = weeklyResult.data || [];
+        const isNewUser = weeklyResult.isNewUser || weeklyData.length === 0;
         
-        setUserStats({
-          totalDaysTracked: weeklyData.length,
-          averageDailyIntake: Math.round(avgDaily),
-          goalAchievementRate: weeklyData.length > 0 ? Math.round((achievedDays / weeklyData.length) * 100) : 0,
-          currentStreak: calculateStreak(weeklyData),
-          totalLitersConsumed: Math.round(totalConsumed / 1000 * 10) / 10
-        });
+        // Check if user has any real activity
+        const hasRealData = weeklyData.some(day => day.totalConsumed > 0) || todayStats.totalConsumed > 0;
+
+        if (isNewUser || !hasRealData) {
+          // Set empty stats for new users
+          setUserStats({
+            totalDaysTracked: 0,
+            averageDailyIntake: 0,
+            goalAchievementRate: 0,
+            currentStreak: 0,
+            totalLitersConsumed: 0,
+            isNewUser: true
+          });
+        } else {
+          // Calculate real user statistics
+          const totalConsumed = weeklyData.reduce((sum, day) => sum + (day.totalConsumed || 0), 0);
+          const achievedDays = weeklyData.filter(day => day.goalAchieved).length;
+          const avgDaily = weeklyData.length > 0 ? totalConsumed / weeklyData.length : 0;
+          const daysWithData = weeklyData.filter(day => day.totalConsumed > 0).length;
+          
+          setUserStats({
+            totalDaysTracked: daysWithData,
+            averageDailyIntake: Math.round(avgDaily),
+            goalAchievementRate: daysWithData > 0 ? Math.round((achievedDays / daysWithData) * 100) : 0,
+            currentStreak: calculateStreak(weeklyData),
+            totalLitersConsumed: Math.round(totalConsumed / 1000 * 10) / 10,
+            isNewUser: false
+          });
+        }
       }
     } catch (error) {
-      console.error('❌ Error loading user data:', error);
+      console.error('Error loading user data:', error);
+      // Set safe defaults on error
+      setUserStats({
+        totalDaysTracked: 0,
+        averageDailyIntake: 0,
+        goalAchievementRate: 0,
+        currentStreak: 0,
+        totalLitersConsumed: 0,
+        isNewUser: true
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   const calculateStreak = (weeklyData) => {
+    if (!weeklyData || weeklyData.length === 0) return 0;
+    
     let streak = 0;
-    const sortedData = weeklyData.sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sortedData = weeklyData
+      .filter(day => day.totalConsumed > 0) // Only count days with actual data
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
     
     for (const day of sortedData) {
       if (day.goalAchieved) {
@@ -202,28 +227,34 @@ export default function EnhancedUserTab() {
 
   const shareProgress = async () => {
     try {
-      const message = `🏆 My Hydration Journey:\n\n💧 ${userStats.totalLitersConsumed}L total consumed\n📊 ${userStats.goalAchievementRate}% goal achievement\n🔥 ${userStats.currentStreak} day streak\n\nStay hydrated with Smart Water Bottle! 💪`;
-      
-      await Share.share({
-        message,
-        title: 'My Hydration Stats'
-      });
+      if (userStats.isNewUser) {
+        const message = `Just started my hydration journey with Smart Water Bottle! 💧\n\nJoin me in building healthy hydration habits! 💪`;
+        
+        await Share.share({
+          message,
+          title: 'My Hydration Journey'
+        });
+      } else {
+        const message = `My Hydration Journey:\n\n💧 ${userStats.totalLitersConsumed}L total consumed\n📊 ${userStats.goalAchievementRate}% goal achievement\n🔥 ${userStats.currentStreak} day streak\n\nStay hydrated with Smart Water Bottle! 💪`;
+        
+        await Share.share({
+          message,
+          title: 'My Hydration Stats'
+        });
+      }
     } catch (error) {
       console.error('Error sharing:', error);
     }
   };
 
   const getInitials = () => {
-    // First try to get the actual name
     const name = getUserName();
     
-    // If it's not "User" and not an email format, use it for initials
     if (name && name !== 'User' && !name.includes('@')) {
       const names = name.split(' ');
       return names.map(n => n[0]).join('').toUpperCase().substring(0, 2);
     }
     
-    // Fallback to email if available
     const email = auth.currentUser?.email || user?.email;
     if (email) {
       return email.substring(0, 2).toUpperCase();
@@ -233,17 +264,10 @@ export default function EnhancedUserTab() {
   };
 
   const getUserName = () => {
-    // First try userDetails from context (this should have the Firestore data)
     if (userDetails?.name) return userDetails.name;
-    
-    // Then try profileData from Firebase (loaded in this component)
     if (profileData?.name) return profileData.name;
-    
-    // Then try Firebase Auth displayName
     if (auth.currentUser?.displayName) return auth.currentUser.displayName;
     if (user?.displayName) return user.displayName;
-    
-    // Last resort: use email username
     if (auth.currentUser?.email) return auth.currentUser.email.split('@')[0];
     if (user?.email) return user.email.split('@')[0];
     
@@ -266,11 +290,22 @@ export default function EnhancedUserTab() {
   };
 
   const achievements = [
-    { icon: 'water', title: 'First Drop', achieved: userStats.totalDaysTracked > 0, description: 'Started tracking' },
+    { icon: 'water', title: 'First Drop', achieved: !userStats.isNewUser && userStats.totalDaysTracked > 0, description: 'Started tracking' },
     { icon: 'flame', title: 'Hot Streak', achieved: userStats.currentStreak >= 7, description: '7-day streak' },
     { icon: 'trophy', title: 'Achiever', achieved: userStats.goalAchievementRate >= 80, description: '80% goal rate' },
     { icon: 'analytics', title: 'Data Lover', achieved: userStats.totalDaysTracked >= 30, description: '30 days tracked' },
   ];
+
+  // Show loading state
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ThemedText style={{ color: theme.text }}>Loading your profile...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -279,7 +314,22 @@ export default function EnhancedUserTab() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        
+        {/* Title and Sign Out Section */}
+        <View style={[styles.titleSection, { backgroundColor: theme.card, flexDirection: 'row', alignItems: 'center' }]}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <ThemedText style={[styles.pageTitle, { color: theme.text }]}>
+              User Dashboard
+            </ThemedText>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.signOutIconContainer}
+            onPress={confirmLogout}
+          >
+            <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+          </TouchableOpacity>
+        </View>
+
         {/* Enhanced Header with Gradient */}
         <LinearGradient
           colors={[theme.primary, theme.primary + 'CC']}
@@ -287,10 +337,9 @@ export default function EnhancedUserTab() {
         >
           <View style={styles.headerContent}>
             <View style={styles.headerTop}>
-              <ThemedText style={styles.headerGreeting}>Welcome back!</ThemedText>
-              <TouchableOpacity onPress={() => router.push('/settings')}>
-                <Ionicons name="settings-outline" size={24} color="white" />
-              </TouchableOpacity>
+              <ThemedText style={styles.headerGreeting}>
+                {userStats.isNewUser ? 'Welcome to your hydration journey!' : 'Welcome back!'}
+              </ThemedText>
             </View>
             
             {/* Profile Section */}
@@ -309,177 +358,103 @@ export default function EnhancedUserTab() {
               <View style={styles.profileInfo}>
                 <ThemedText style={styles.userName}>{getUserName()}</ThemedText>
                 <ThemedText style={styles.userEmail}>{user?.email}</ThemedText>
-                <View style={styles.membershipBadge}>
-                  <Ionicons 
-                    name={userDetails?.member ? "diamond" : "person"} 
-                    size={12} 
-                    color="white" 
-                  />
-                  <ThemedText style={styles.membershipText}>{getMembershipStatus()}</ThemedText>
-                </View>
               </View>
+
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={() => {
+                  router.push('/tabs/editprofile');
+                }}
+              >
+                <Ionicons name="create-outline" size={20} color="white" />
+                <ThemedText style={styles.editButtonText}>Edit</ThemedText>
+              </TouchableOpacity>
             </Animated.View>
           </View>
         </LinearGradient>
 
         {/* Quick Stats Grid */}
         <View style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>📊 Your Hydration Stats</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+            {userStats.isNewUser ? 'Your Journey Starts Here' : 'Your Hydration Stats'}
+          </ThemedText>
+          
+          {userStats.isNewUser ? (
+            <View style={styles.newUserMessage}>
+              <Ionicons name="water" size={48} color={theme.primary} />
+              <ThemedText style={[styles.newUserTitle, { color: theme.text }]}>
+                Ready to Start Tracking?
+              </ThemedText>
+              <ThemedText style={[styles.newUserSubtitle, { color: theme.textMuted }]}>
+                Fill your smart bottle and take your first sip to begin building healthy hydration habits!
+              </ThemedText>
+            </View>
+          ) : null}
+          
           <View style={styles.statsGrid}>
             <StatsCard
               icon="water"
               title="Total Intake"
-              value={`${userStats.totalLitersConsumed}L`}
-              subtitle="All time"
+              value={userStats.isNewUser ? '--' : `${userStats.totalLitersConsumed}L`}
+              subtitle={userStats.isNewUser ? 'Start tracking' : 'All time'}
               color="#3498db"
+              isNewUser={userStats.isNewUser}
             />
             <StatsCard
               icon="flame"
               title="Current Streak"
-              value={`${userStats.currentStreak}`}
-              subtitle="days"
+              value={userStats.isNewUser ? '--' : `${userStats.currentStreak}`}
+              subtitle={userStats.isNewUser ? 'Start tracking' : 'days'}
               color="#e74c3c"
+              isNewUser={userStats.isNewUser}
             />
             <StatsCard
               icon="trending-up"
               title="Success Rate"
-              value={`${userStats.goalAchievementRate}%`}
-              subtitle="goal achievement"
+              value={userStats.isNewUser ? '--' : `${userStats.goalAchievementRate}%`}
+              subtitle={userStats.isNewUser ? 'Start tracking' : 'goal achievement'}
               color="#27ae60"
+              isNewUser={userStats.isNewUser}
             />
             <StatsCard
               icon="calendar"
               title="Days Tracked"
-              value={`${userStats.totalDaysTracked}`}
-              subtitle="total days"
+              value={userStats.isNewUser ? '--' : `${userStats.totalDaysTracked}`}
+              subtitle={userStats.isNewUser ? 'Start tracking' : 'total days'}
               color="#9b59b6"
+              isNewUser={userStats.isNewUser}
             />
           </View>
         </View>
 
         {/* Achievements Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>🏆 Achievements</ThemedText>
-            <TouchableOpacity onPress={() => router.push('/achievements')}>
-              <ThemedText style={[styles.seeAllText, { color: theme.primary }]}>See All</ThemedText>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.achievementsGrid}>
-            {achievements.map((achievement, index) => (
-              <AchievementBadge key={index} {...achievement} />
-            ))}
-          </View>
-        </View>
-
-        {/* Account Information */}
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>👤 Account Details</ThemedText>
-          <View style={[styles.infoContainer, { backgroundColor: theme.card }]}>
-            <View style={styles.infoRow}>
-              <FontAwesome name="user" size={18} color={theme.textMuted} />
-              <View style={styles.infoContent}>
-                <ThemedText style={[styles.infoLabel, { color: theme.textMuted }]}>Full Name</ThemedText>
-                <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                  {getUserName()}
-                </ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <FontAwesome name="envelope" size={18} color={theme.textMuted} />
-              <View style={styles.infoContent}>
-                <ThemedText style={[styles.infoLabel, { color: theme.textMuted }]}>Email Address</ThemedText>
-                <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                  {user?.email}
-                </ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <MaterialIcons
-                name={user?.emailVerified ? 'verified' : 'warning'}
-                size={18}
-                color={user?.emailVerified ? '#27ae60' : '#f39c12'}
-              />
-              <View style={styles.infoContent}>
-                <ThemedText style={[styles.infoLabel, { color: theme.textMuted }]}>Account Status</ThemedText>
-                <ThemedText style={[
-                  styles.infoValue,
-                  { color: user?.emailVerified ? '#27ae60' : '#f39c12' }
-                ]}>
-                  {user?.emailVerified ? 'Verified Account' : 'Pending Verification'}
-                </ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="time" size={18} color={theme.textMuted} />
-              <View style={styles.infoContent}>
-                <ThemedText style={[styles.infoLabel, { color: theme.textMuted }]}>Member Since</ThemedText>
-                <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                  {getAccountAge()} ago
-                </ThemedText>
-              </View>
+        {!userStats.isNewUser && (
+          <View style={styles.section}>
+            <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>Achievements</ThemedText>
+            <View style={styles.achievementsGrid}>
+              {achievements.map((achievement, index) => (
+                <AchievementBadge
+                  key={index}
+                  icon={achievement.icon}
+                  title={achievement.title}
+                  achieved={achievement.achieved}
+                  description={achievement.description}
+                />
+              ))}
             </View>
           </View>
-        </View>
+        )}
 
-        {/* Settings & Actions */}
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>⚙️ Settings & Actions</ThemedText>
-          
-          <SettingsOption
-            icon="person-outline"
-            title="Edit Profile"
-            subtitle="Update your personal information"
-            onPress={() => router.push('/account/edit')}
-          />
-          
-          <SettingsOption
-            icon="water-outline"
-            title="Hydration Goals"
-            subtitle="Customize your daily water intake goals"
-            onPress={() => router.push('/settings/goals')}
-          />
-          
-          <SettingsOption
-            icon="notifications-outline"
-            title="Notifications"
-            subtitle="Manage your hydration reminders"
-            onPress={() => router.push('/settings/notifications')}
-          />
-          
-          <SettingsOption
-            icon="analytics-outline"
-            title="Export Data"
-            subtitle="Download your hydration history"
-            onPress={() => router.push('/export')}
-          />
-          
-          <SettingsOption
-            icon="share-outline"
-            title="Share Progress"
-            subtitle="Share your hydration achievements"
-            onPress={shareProgress}
-          />
-          
-          <SettingsOption
-            icon="help-circle-outline"
-            title="Help & Support"
-            subtitle="Get help or contact support"
-            onPress={() => router.push('/support')}
-          />
-        </View>
-
-        {/* Logout Section */}
+        {/* Share Progress */}
         <View style={styles.section}>
           <TouchableOpacity 
-            style={[styles.logoutButton, { backgroundColor: theme.error || '#e74c3c' }]}
-            onPress={confirmLogout}
+            style={[styles.shareButton, { backgroundColor: theme.primary }]}
+            onPress={shareProgress}
           >
-            <Ionicons name="log-out-outline" size={20} color="white" />
-            <ThemedText style={styles.logoutButtonText}>Sign Out</ThemedText>
+            <Ionicons name="share-outline" size={20} color="white" />
+            <ThemedText style={styles.shareButtonText}>
+              {userStats.isNewUser ? 'Share Journey' : 'Share Progress'}
+            </ThemedText>
           </TouchableOpacity>
         </View>
 
@@ -532,7 +507,32 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   
+  // Title Section Styles
+  titleSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  signOutIconContainer: {
+    padding: 4,
+  },
+  pageTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  placeholder: {
+    width: 32,
+  },
+
   // Header Styles
   headerGradient: {
     paddingTop: 20,
@@ -607,18 +607,17 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     marginBottom: 8,
   },
-  membershipBadge: {
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
-  membershipText: {
-    fontSize: 12,
+  editButtonText: {
     color: 'white',
+    fontSize: 14,
     fontWeight: '600',
     marginLeft: 4,
   },
@@ -632,15 +631,25 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  // New User Message
+  newUserMessage: {
     alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
     marginBottom: 16,
   },
-  seeAllText: {
+  newUserTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  newUserSubtitle: {
     fontSize: 14,
-    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // Stats Grid Styles
@@ -710,80 +719,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Info Container Styles
-  infoContainer: {
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  infoContent: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  // Settings Option Styles
-  settingsOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  settingsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingsIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  settingsContent: {
-    flex: 1,
-  },
-  settingsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  settingsSubtitle: {
-    fontSize: 14,
-  },
-  settingsRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  // Logout Button Styles
-  logoutButton: {
+  // Share Button Styles
+  shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -791,7 +728,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 8,
   },
-  logoutButtonText: {
+  shareButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

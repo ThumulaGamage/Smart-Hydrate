@@ -1,3 +1,5 @@
+// constant/hometabstyles.js - Fixed theme integration
+
 import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
@@ -85,14 +87,14 @@ export const styles = StyleSheet.create({
     elevation: 5,
   },
   temperatureTile: {
-  alignItems: 'center',
-  padding: 16,
-  borderRadius: 12,
-  shadowColor: '#000',
-  shadowOpacity: 0.1,
-  shadowRadius: 4,
-  elevation: 3,
-},
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   waterLevel: {
     width: '100%',
     borderRadius: 12,
@@ -161,18 +163,34 @@ export const styles = StyleSheet.create({
 
   // Progress Styles
   progressContainer: {
-    marginBottom: 20,
+    margin: 16,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    overflow: 'hidden', // Prevents content from overflowing
   },
+  
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
+  
   progressTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
+  
+  progressContent: {
+    position: 'relative',
+    zIndex: 1, // Ensures chart appears above any shadows
+  },
+  
   progressStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -258,15 +276,19 @@ export const styles = StyleSheet.create({
   // Chart Styles
   chartContainer: {
     alignItems: 'center',
+    marginTop: 16,
   },
   chartTitle: {
-    fontSize: 16,
+    fontSize: 1222,
     fontWeight: '600',
     marginBottom: 12,
   },
   chart: {
     borderRadius: 16,
     marginVertical: 8,
+    padding: 16,
+    marginLeft: -16,
+    marginRight: -16,
   },
   chartHeader: {
     flexDirection: 'row',
@@ -388,59 +410,93 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   consumptionBadge: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: 'rgba(52, 152, 219, 0.1)',
-  paddingHorizontal: 8,
-  paddingVertical: 4,
-  borderRadius: 12,
-  marginTop: 4
-},
-consumptionText: {
-  fontSize: 12,
-  marginLeft: 4,
-  fontWeight: '600'
-},
-autoTrackBadge: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginLeft: 8,
-  paddingHorizontal: 8,
-  paddingVertical: 2,
-  borderRadius: 10,
-  backgroundColor: 'rgba(52, 152, 219, 0.1)'
-},
-autoTrackText: {
-  fontSize: 12,
-  marginLeft: 4
-},
-capacityInfo: {
-  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  paddingHorizontal: 10,
-  paddingVertical: 4,
-  borderRadius: 12
-},
-capacityText: {
-  color: 'white',
-  fontSize: 12,
-  fontWeight: '500'
-},
-capacitySettings: {
-  marginTop: 16,
-  alignItems: 'center'
-},
-capacityButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 16,
-  paddingVertical: 8,
-  borderRadius: 20,
-  borderWidth: 1,
-  borderColor: '#e0e0e0'
-},
-capacityButtonText: {
-  marginLeft: 8,
-  fontSize: 14,
-  fontWeight: '500'
-},
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4
+  },
+  consumptionText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '600'
+  },
+  autoTrackBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: 'rgba(52, 152, 219, 0.1)'
+  },
+  autoTrackText: {
+    fontSize: 12,
+    marginLeft: 4
+  },
+  capacityInfo: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12
+  },
+  capacityText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500'
+  },
+  capacitySettings: {
+    marginTop: 16,
+    alignItems: 'center'
+  },
+  capacityButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0'
+  },
+  capacityButtonText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  
+  // Celebration Styles
+  celebrationContainer: {
+    padding: 20,
+    alignItems: 'center'
+  },
+  celebrationEmoji: {
+    fontSize: 48,
+    marginBottom: 10
+  },
+  celebrationTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5
+  },
+  celebrationText: {
+    color: 'white',
+    textAlign: 'center'
+  },
+  
+  // New Drink Badge Styles
+  newDrinkBadge: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8
+  },
+  newDrinkText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold'
+  }
 });
