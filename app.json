@@ -43,15 +43,11 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/smart_hydration_logo.png",
           "imageWidth": 300,
           "resizeMode": "contain",
-          "backgroundColor": "#FFFFFF",
-          "dark": {
-            "image": "./assets/images/icon.png",
-            "backgroundColor": "#000000"
-          }
-        }
+          "backgroundColor": "#FFFFFF"
+                 }
       ],
       "react-native-ble-plx"
     ],

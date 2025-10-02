@@ -12,7 +12,8 @@ import {
   RefreshControl,
   Modal,
   Share,
-  Text
+  Text,
+  Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserDetailContext';
@@ -34,8 +35,9 @@ const StatsCard = ({ icon, title, value, subtitle, color, isNewUser = false }) =
       <View style={[styles.statsCard, { 
         backgroundColor: theme.card,
         borderWidth: 2,
-        borderColor: theme.border || '#E0E0E0',
-        borderStyle: 'dashed'
+        borderColor: theme.primary + '60',
+        borderStyle: 'dashed',
+        shadowColor: 'transparent'
       }]}>
         <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
           <Ionicons name={icon} size={24} color={color + '80'} />
@@ -50,7 +52,14 @@ const StatsCard = ({ icon, title, value, subtitle, color, isNewUser = false }) =
   }
   
   return (
-    <View style={[styles.statsCard, { backgroundColor: theme.card }]}>
+    <View style={[styles.statsCard, { 
+      backgroundColor: theme.card,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 4
+    }]}>
       <View style={[styles.statsIconContainer, { backgroundColor: color + '20' }]}>
         <Ionicons name={icon} size={24} color={color} />
       </View>
@@ -193,7 +202,7 @@ export default function EnhancedUserTab() {
     
     let streak = 0;
     const sortedData = weeklyData
-      .filter(day => day.totalConsumed > 0) // Only count days with actual data
+      .filter(day => day.totalConsumed > 0)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     
     for (const day of sortedData) {
@@ -274,21 +283,6 @@ export default function EnhancedUserTab() {
     return 'User';
   };
 
-  const getMembershipStatus = () => {
-    return userDetails?.member ? 'Premium Member' : 'Free Member';
-  };
-
-  const getAccountAge = () => {
-    if (!user?.metadata?.creationTime) return 'New User';
-    const created = new Date(user.metadata.creationTime);
-    const now = new Date();
-    const days = Math.floor((now - created) / (1000 * 60 * 60 * 24));
-    
-    if (days < 7) return `${days} days`;
-    if (days < 30) return `${Math.floor(days / 7)} weeks`;
-    return `${Math.floor(days / 30)} months`;
-  };
-
   const achievements = [
     { icon: 'water', title: 'First Drop', achieved: !userStats.isNewUser && userStats.totalDaysTracked > 0, description: 'Started tracking' },
     { icon: 'flame', title: 'Hot Streak', achieved: userStats.currentStreak >= 7, description: '7-day streak' },
@@ -342,14 +336,21 @@ export default function EnhancedUserTab() {
               </ThemedText>
             </View>
             
-            {/* Profile Section */}
+            {/* Profile Section with Image */}
             <Animated.View style={[styles.profileSection, { opacity: fadeAnim }]}>
               <View style={styles.profileImageContainer}>
-                <View style={[styles.profileImage, { backgroundColor: theme.card || '#ffffff' }]}>
-                  <Text style={[styles.profileInitials, { color: theme.primary || '#667eea' }]}>
-                    {getInitials()}
-                  </Text>
-                </View>
+                {userDetails?.profilePicture ? (
+                  <Image 
+                    source={{ uri: userDetails.profilePicture }} 
+                    style={styles.profileImage}
+                  />
+                ) : (
+                  <View style={[styles.profileImage, { backgroundColor: theme.card || '#ffffff' }]}>
+                    <Text style={[styles.profileInitials, { color: theme.primary || '#667eea' }]}>
+                      {getInitials()}
+                    </Text>
+                  </View>
+                )}
                 
                 {/* Online Status Indicator */}
                 <View style={[styles.onlineIndicator, { backgroundColor: theme.success || '#27ae60' }]} />
@@ -363,7 +364,7 @@ export default function EnhancedUserTab() {
               <TouchableOpacity 
                 style={styles.editButton}
                 onPress={() => {
-                  router.push('/tabs/editprofile');
+                  router.push('/editprofile');
                 }}
               >
                 <Ionicons name="create-outline" size={20} color="white" />
@@ -445,22 +446,65 @@ export default function EnhancedUserTab() {
           </View>
         )}
 
-        {/* Share Progress */}
+        {/* Action Buttons Section */}
         <View style={styles.section}>
-          <TouchableOpacity 
-            style={[styles.shareButton, { backgroundColor: theme.primary }]}
-            onPress={shareProgress}
-          >
-            <Ionicons name="share-outline" size={20} color="white" />
-            <ThemedText style={styles.shareButtonText}>
-              {userStats.isNewUser ? 'Share Journey' : 'Share Progress'}
-            </ThemedText>
-          </TouchableOpacity>
+          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</ThemedText>
+          <View style={styles.actionButtonsContainer}>
+
+
+                
+
+                <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: theme.primary }]}
+              onPress={() => router.push('/customize-hydration')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.actionButtonIcon}>
+                <Ionicons name="settings-outline" size={24} color="white" />
+              </View>
+              <View style={styles.actionButtonContent}>
+                <ThemedText style={styles.actionButtonText}>Hydration Settings</ThemedText>
+                <ThemedText style={styles.actionButtonSubtext}>Customize your daily goals</ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: theme.primary }]}
+              onPress={() => router.push('/progress')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.actionButtonIcon}>
+                <Ionicons name="analytics-outline" size={24} color="white" />
+              </View>
+              <View style={styles.actionButtonContent}>
+                <ThemedText style={styles.actionButtonText}>View Progress</ThemedText>
+                <ThemedText style={styles.actionButtonSubtext}>Track your hydration trends</ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+
+       
+          </View>
         </View>
 
         {/* Extra padding for bottom tab */}
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* Share Journey Button at Bottom */}
+      <View style={[styles.bottomShareButton, { backgroundColor: theme.background }]}>
+        <TouchableOpacity 
+          style={[styles.shareButton, { backgroundColor: '#388E3C'}]}
+          onPress={shareProgress}
+        >
+          <Ionicons name="share-social-outline" size={20} color="white" />
+          <ThemedText style={styles.shareButtonText}>
+            {userStats.isNewUser ? 'Share Journey' : 'Share Progress'}
+          </ThemedText>
+        </TouchableOpacity>
+      </View>
 
       {/* Logout Confirmation Modal */}
       <Modal
@@ -663,6 +707,8 @@ const styles = StyleSheet.create({
     width: (width - 56) / 2,
     padding: 16,
     borderRadius: 16,
+    borderWidth: 2,
+    borderStyle: 'solid',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -719,14 +765,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Share Button Styles
+  // Action Buttons Container
+  actionButtonsContainer: {
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    minHeight: 90,
+  },
+  actionButtonIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  actionButtonContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingRight: 8,
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  actionButtonSubtext: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    fontWeight: '400',
+    flexWrap: 'wrap',
+  },
+
+  // Bottom Share Button
+  bottomShareButton: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
-    marginTop: 8,
+    width: '100%',
   },
   shareButtonText: {
     color: 'white',
@@ -787,6 +887,6 @@ const styles = StyleSheet.create({
   },
 
   bottomPadding: {
-    height: 20,
+    height: 100, // Increased to accommodate bottom button
   },
 });
