@@ -364,7 +364,7 @@ export default function EnhancedUserTab() {
               <TouchableOpacity 
                 style={styles.editButton}
                 onPress={() => {
-                  router.push('/editprofile');
+                  router.push('tabs/editprofile');
                 }}
               >
                 <Ionicons name="create-outline" size={20} color="white" />
@@ -456,7 +456,10 @@ export default function EnhancedUserTab() {
 
                 <TouchableOpacity 
               style={[styles.actionButton, { backgroundColor: theme.primary }]}
-              onPress={() => router.push('/customize-hydration')}
+              onPress={() => {
+                console.log('Navigating to customize-hydration...');
+                router.push('tabs/customize-hydration');
+              }}
               activeOpacity={0.8}
             >
               <View style={styles.actionButtonIcon}>
@@ -472,7 +475,10 @@ export default function EnhancedUserTab() {
             
             <TouchableOpacity 
               style={[styles.actionButton, { backgroundColor: theme.primary }]}
-              onPress={() => router.push('/progress')}
+              onPress={() => {
+                console.log('Navigating to progress...');
+                router.push('tabs/progress');
+              }}
               activeOpacity={0.8}
             >
               <View style={styles.actionButtonIcon}>

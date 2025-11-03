@@ -20,16 +20,16 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useUser } from '../context/UserDetailContext';
-import useTheme from '../Theme/theme';
+import { useUser } from '../../context/UserDetailContext';
+import useTheme from '../../Theme/theme';
 
 // Import Supabase and Firebase directly
-import { supabase } from '../config/supabaseConfig';
-import { firestore } from '../config/firebaseConfig';
+import { supabase } from '../../config/supabaseConfig';
+import { firestore } from '../../config/firebaseConfig';
 
-import ThemedButton from '../components/ThemedButton';
-import ThemedText from '../components/ThemedText';
-import ThemedView from '../components/ThemedView';
+import ThemedButton from '../../components/ThemedButton';
+import ThemedText from '../../components/ThemedText';
+import ThemedView from '../../components/ThemedView';
 
 const { width } = Dimensions.get('window');
 

@@ -1,12 +1,12 @@
 import { View, Text, StyleSheet } from 'react-native';
 import useTheme from '../../Theme/theme';
 
-export default function NotificationTab() {
+export default function Progress() {
   const theme = useTheme();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Text style={[styles.text, { color: theme.text }]}>Notification</Text>
+      <Text style={[styles.text, { color: theme.text }]}>Progress</Text>
     </View>
   );
 }

@@ -10,7 +10,8 @@ function RootLayoutNav() {
       <Stack.Screen name="auth/signIn" />
       <Stack.Screen name="auth/signUp" />
       <Stack.Screen name="homepage" />
-      <Stack.Screen name="editprofile" />
+      
+      
     </Stack>
   );
 }
