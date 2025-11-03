@@ -1,4 +1,4 @@
-// EnhancedHomepage.jsx - Fixed WaterBottleService initialization
+// EnhancedHomepage.jsx - Fixed WaterBottleService initialization (CLEANED VERSION)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -29,7 +29,8 @@ const { width } = Dimensions.get('window');
 // Create a ref to hold the current service instance
 const waterBottleServiceRef = React.createRef();
 
-const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel, theme }) => {
+// ADDED: bottleCapacity prop to WaterBottleVisual
+const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel, theme, bottleCapacity }) => {
   const [animatedValue] = useState(new Animated.Value(0));
   const [pulseAnim] = useState(new Animated.Value(1));
 
@@ -62,16 +63,19 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
 
   const getBottleOpacity = () => isConnected ? 1 : 0.3;
 
+  // Calculate remaining volume
+  const remainingVolume = (waterLevel / 100) * bottleCapacity;
+
   return (
     <Animated.View style={[styles.bottleContainer, { transform: [{ scale: pulseAnim }] }]}>
       <View style={[styles.bottleOutline, { opacity: getBottleOpacity() }]}>
         <View style={[styles.bottleCap, { backgroundColor: theme?.text || '#34495e' }]} />
-        <View style={[styles.bottleNeck, { 
+        <View style={[styles.bottleNeck, {
           backgroundColor: theme?.card || '#ecf0f1',
           borderColor: theme?.border || '#bdc3c7'
         }]} />
-        
-        <View style={[styles.bottleBody, { 
+
+        <View style={[styles.bottleBody, {
           backgroundColor: theme?.card || '#ecf0f1',
           borderColor: theme?.border || '#bdc3c7'
         }]}>
@@ -88,7 +92,7 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
               },
             ]}
           />
-          
+
           <View style={styles.levelMarkers}>
             {[25, 50, 75, 100].map((level) => (
               <View key={level} style={styles.levelMarker}>
@@ -98,16 +102,20 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
             ))}
           </View>
         </View>
-        
+
         <View style={[styles.bottleBase, { backgroundColor: theme?.text || '#34495e' }]} />
       </View>
-      
+
       <View style={styles.waterLevelText}>
         <Text style={[styles.waterPercentage, { color: getWaterColor(waterLevel) }]}>
           {waterLevel.toFixed(1)}%
         </Text>
+        {/* ADDED: Remaining water volume */}
+        <Text style={[styles.waterLevelVolume, { color: theme?.text || '#2c3e50', fontSize: 18, fontWeight: '600', marginTop: 4 }]}>
+          {remainingVolume.toFixed(0)} ml left
+        </Text>
         <Text style={[styles.waterLevelLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Water Level</Text>
-        
+
         <View style={styles.statusGrid}>
           <View style={styles.statusItem}>
             <Ionicons name="thermometer" size={16} color={theme?.primary || "#2196F3"} />
@@ -130,7 +138,7 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
 const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => {
   const getRecommendations = () => {
     const recommendations = [];
-    
+
     if (waterLevel < 25) {
       recommendations.push({
         icon: 'water',
@@ -138,7 +146,7 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
         priority: 'high'
       });
     }
-    
+
     if (temperature > 30) {
       recommendations.push({
         icon: 'thermometer-outline',
@@ -146,7 +154,7 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
         priority: 'medium'
       });
     }
-    
+
     if (lastDrink && (Date.now() - lastDrink) > 3600000) {
       recommendations.push({
         icon: 'time-outline',
@@ -154,7 +162,7 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
         priority: 'high'
       });
     }
-    
+
     return recommendations;
   };
 
@@ -177,15 +185,15 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
       {recommendations.map((rec, index) => (
         <View key={index} style={[
           styles.recommendationItem,
-          { 
+          {
             backgroundColor: theme?.card || 'white',
             borderLeftColor: rec.priority === 'high' ? (theme?.error || '#f44336') : (theme?.warning || '#FF9800')
           }
         ]}>
-          <Ionicons 
-            name={rec.icon} 
-            size={20} 
-            color={rec.priority === 'high' ? (theme?.error || '#f44336') : (theme?.warning || '#FF9800')} 
+          <Ionicons
+            name={rec.icon}
+            size={20}
+            color={rec.priority === 'high' ? (theme?.error || '#f44336') : (theme?.warning || '#FF9800')}
           />
           <Text style={[styles.recommendationText, { color: theme?.text || '#495057' }]}>{rec.text}</Text>
         </View>
@@ -198,7 +206,7 @@ export default function EnhancedHomepage() {
   const { user } = useUser();
   const theme = useTheme();
   const router = useRouter();
-  
+
   const [bleState, setBleState] = useState({
     isConnected: false,
     isConnecting: false,
@@ -225,15 +233,15 @@ export default function EnhancedHomepage() {
   const [refreshing, setRefreshing] = useState(false);
   const [waterBottleService, setWaterBottleService] = useState(null);
   const [showChart, setShowChart] = useState(false);
-  
+
   // New states for drink detection and animation
   const [lastDrinkVolume, setLastDrinkVolume] = useState(0);
   const [showDrinkAnimation, setShowDrinkAnimation] = useState(false);
   const animationTimeoutRef = useRef(null);
-  
+
   // Store unsubscribe functions for cleanup
   const unsubscribersRef = useRef([]);
-  
+
   // Data debugger state
   const [showDebugger, setShowDebugger] = useState(false);
 
@@ -253,16 +261,16 @@ export default function EnhancedHomepage() {
   // Enhanced function to update hydration progress with animation
   const updateHydrationProgress = useCallback(async (volumeConsumed) => {
     console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml`);
-    
+
     // Show drink animation immediately
     setLastDrinkVolume(Math.round(volumeConsumed));
     setShowDrinkAnimation(true);
-    
+
     // Clear animation after 3 seconds
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
     }
-    
+
     animationTimeoutRef.current = setTimeout(() => {
       setShowDrinkAnimation(false);
       setLastDrinkVolume(0);
@@ -270,13 +278,13 @@ export default function EnhancedHomepage() {
 
     // Try to save to database using the current service reference
     const currentService = waterBottleServiceRef.current;
-    
+
     if (currentService) {
       try {
         console.log(`💾 Saving drinking event to database: ${volumeConsumed.toFixed(0)}ml`);
         await currentService.saveDrinkingEvent(volumeConsumed);
         console.log('✅ Drinking event saved successfully to database');
-        
+
         // Refresh Firebase data to reflect the update
         try {
           const updatedStats = await currentService.getTodayStats();
@@ -294,7 +302,7 @@ export default function EnhancedHomepage() {
     } else {
       console.warn('⚠️ WaterBottleService not ready, cannot save to database');
       Alert.alert(
-        'Service Not Ready', 
+        'Service Not Ready',
         'Drink detected but database service not ready. The drink will be saved when the service is available.',
         [{ text: 'OK' }]
       );
@@ -304,21 +312,21 @@ export default function EnhancedHomepage() {
   const initializeServices = async () => {
     try {
       initializeBLE();
-      
+
       if (auth.currentUser) {
         console.log('🔧 Initializing WaterBottleService...');
-        
+
         // Initialize the service immediately
         const service = new WaterBottleService(auth.currentUser.uid);
-        
+
         // Set both state and ref
         setWaterBottleService(service);
         waterBottleServiceRef.current = service;
-        
+
         // Load initial data
         await loadFirebaseData(service);
         setupFirebaseListeners(service);
-        
+
         console.log('✅ WaterBottleService initialized and ready');
       } else {
         console.warn('⚠️ No authenticated user found');
@@ -338,7 +346,7 @@ export default function EnhancedHomepage() {
         },
         onDataReceived: async (data) => {
           console.log('📡 BLE data received:', data);
-          
+
           let newWaterLevel = data.waterLevel;
           const currentTimestamp = new Date();
 
@@ -367,12 +375,12 @@ export default function EnhancedHomepage() {
             if (levelDifference > minThreshold && levelDifference <= maxThreshold) {
               const bottleCapacity = getBottleCapacity();
               const volumeConsumed = (levelDifference / 100) * bottleCapacity;
-              
+
               console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml (${levelDifference.toFixed(1)}% decrease)`);
-              
+
               // Update hydration progress with animation
               await updateHydrationProgress(volumeConsumed);
-              
+
             } else if (levelDifference < -minThreshold) {
               console.log('🔄 Bottle refilled - not counting as consumption');
             } else if (levelDifference > maxThreshold) {
@@ -381,15 +389,15 @@ export default function EnhancedHomepage() {
           }
 
           // Update sensor data
-          setSensorData(prev => ({ 
-            ...prev, 
+          setSensorData(prev => ({
+            ...prev,
             waterLevel: newWaterLevel,
             temperature: data.temperature || prev.temperature,
             batteryLevel: data.batteryLevel || prev.batteryLevel,
             status: data.status || prev.status,
             lastUpdate: currentTimestamp
           }));
-          
+
           // Update last reported level
           lastReportedWaterLevel.current = newWaterLevel;
         },
@@ -450,9 +458,9 @@ export default function EnhancedHomepage() {
       // Enhanced listener for today's stats with better error handling
       const todayStatsUnsubscribe = service.onTodayStats((stats) => {
         console.log('🔄 Firebase onTodayStats listener triggered:', stats);
-        setFirebaseData(prev => ({ 
-          ...prev, 
-          todayStats: stats 
+        setFirebaseData(prev => ({
+          ...prev,
+          todayStats: stats
         }));
       });
 
@@ -461,10 +469,10 @@ export default function EnhancedHomepage() {
           const latest = readings[0];
           console.log('🔄 Latest reading updated:', latest);
           setFirebaseData(prev => ({ ...prev, latestReading: latest }));
-          
+
           // Handle Firestore timestamp conversion
           const timestamp = latest.timestamp?.toDate ? latest.timestamp.toDate() : new Date(latest.timestamp);
-          
+
           setSensorData(prev => ({
             ...prev,
             waterLevel: latest.waterLevel || prev.waterLevel,
@@ -478,16 +486,16 @@ export default function EnhancedHomepage() {
 
       const profileUnsubscribe = service.onProfileChanges((profile) => {
         console.log('🔄 Profile updated:', profile);
-        setFirebaseData(prev => ({ 
-          ...prev, 
-          profile: profile 
+        setFirebaseData(prev => ({
+          ...prev,
+          profile: profile
         }));
       });
 
       // Store unsubscribe functions
       unsubscribersRef.current = [
         todayStatsUnsubscribe,
-        readingsUnsubscribe, 
+        readingsUnsubscribe,
         profileUnsubscribe
       ].filter(Boolean); // Remove any undefined functions
 
@@ -516,15 +524,15 @@ export default function EnhancedHomepage() {
 
   const cleanup = () => {
     console.log('🧹 Starting cleanup...');
-    
+
     // Cleanup Firebase listeners
     cleanupListeners();
-    
+
     // Cleanup BLE
     if (bleService?.isConnected) {
       bleService.disconnect().catch(e => console.log('BLE cleanup error:', e));
     }
-    
+
     // Cleanup animations
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
@@ -578,7 +586,7 @@ export default function EnhancedHomepage() {
         Alert.alert('Not Connected', 'Please connect first');
         return;
       }
-      
+
       await bleService.sendCommand(command);
     } catch (error) {
       console.error('❌ Command error:', error);
@@ -592,14 +600,14 @@ export default function EnhancedHomepage() {
     if (profileCapacity && profileCapacity > 0) {
       return profileCapacity;
     }
-    return 500; // Default bottle capacity
+    return 1000; // Default bottle capacity
   };
 
   const getUserDisplayName = () => {
     if (user?.name) return user.name;
     if (user?.displayName) return user.displayName;
     if (auth.currentUser?.displayName) return auth.currentUser.displayName;
-    
+
     if (auth.currentUser?.email) {
       const emailPart = auth.currentUser.email.split('@')[0];
       return emailPart
@@ -607,7 +615,7 @@ export default function EnhancedHomepage() {
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
     }
-    
+
     return 'User';
   };
 
@@ -644,13 +652,15 @@ export default function EnhancedHomepage() {
   const actualDailyStats = firebaseData.todayStats || dailyStats;
   const actualWeeklyData = firebaseData.weeklyData.length > 0 ? firebaseData.weeklyData : weeklyData;
 
+  const bottleCapacity = getBottleCapacity(); // Get capacity here once
+
   return (
     <View style={[styles.container, { backgroundColor: theme?.background || '#f5f7fa' }]}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={theme?.primary}
             colors={[theme?.primary || '#667eea']}
@@ -665,30 +675,21 @@ export default function EnhancedHomepage() {
               <Text style={styles.greeting}>Hello, {getUserDisplayName()}! 👋</Text>
               <Text style={styles.subtitle}>Stay hydrated & healthy today</Text>
             </View>
-            <TouchableOpacity 
-              onPress={() => setShowDebugger(true)}
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                padding: 8,
-                borderRadius: 20
-              }}
-            >
-              <Ionicons name="bug" size={20} color="white" />
-            </TouchableOpacity>
+            {/* REMOVED: Right top corner button (Data Debugger) */}
           </View>
         </View>
 
         {/* Connection Section */}
         <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
           <Text style={[styles.sectionTitle, { color: theme?.text || '#2c3e50' }]}>🔗 Smart Bottle Connection</Text>
-          
+
           <View style={[styles.connectionStatus, { backgroundColor: theme?.background || '#f8f9fa' }]}>
-            <Ionicons 
-              name={bleState.isConnected ? "bluetooth" : "bluetooth-outline"} 
-              size={24} 
-              color={bleState.isConnected ? (theme?.success || "#4CAF50") : (theme?.textMuted || "#999")} 
+            <Ionicons
+              name={bleState.isConnected ? "bluetooth" : "bluetooth-outline"}
+              size={24}
+              color={bleState.isConnected ? (theme?.success || "#4CAF50") : (theme?.textMuted || "#999")}
             />
-            <Text style={[styles.statusTextMain, { 
+            <Text style={[styles.statusTextMain, {
               color: bleState.isConnected ? (theme?.success || "#4CAF50") : (theme?.textMuted || "#999")
             }]}>
               {bleState.isConnected ? `Connected to ${bleState.deviceName}` : 'Not Connected'}
@@ -697,23 +698,7 @@ export default function EnhancedHomepage() {
 
           {bleState.isConnected ? (
             <View style={styles.buttonRow}>
-              <TouchableOpacity 
-                style={[styles.button, { backgroundColor: theme?.primary || '#3498db' }]}
-                onPress={() => sendCommand('GET_DATA')}
-              >
-                <Ionicons name="refresh" size={16} color="white" />
-                <Text style={styles.buttonText}>Sync Data</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.button, { backgroundColor: theme?.warning || '#f39c12' }]}
-                onPress={() => sendCommand('CALIBRATE')}
-              >
-                <Ionicons name="settings" size={16} color="white" />
-                <Text style={styles.buttonText}>Calibrate</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.button, { backgroundColor: theme?.error || '#e74c3c' }]}
                 onPress={handleDisconnect}
               >
@@ -722,7 +707,7 @@ export default function EnhancedHomepage() {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.button, { backgroundColor: theme?.success || '#27ae60' }]}
               onPress={handleConnect}
               disabled={bleState.isConnecting}
@@ -746,12 +731,13 @@ export default function EnhancedHomepage() {
 
         {/* Water Bottle Visual */}
         <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
-          <WaterBottleVisual 
-            waterLevel={sensorData.waterLevel} 
+          <WaterBottleVisual
+            waterLevel={sensorData.waterLevel}
             isConnected={bleState.isConnected}
             temperature={sensorData.temperature}
             batteryLevel={sensorData.batteryLevel}
             theme={theme}
+            bottleCapacity={bottleCapacity}
           />
         </View>
 
@@ -764,9 +750,9 @@ export default function EnhancedHomepage() {
           <Text style={{ color: theme?.textMuted || '#7f8c8d' }}>
             Current Water Temperature
           </Text>
-          <Text style={{ 
-            color: theme?.textMuted || '#7f8c8d', 
-            fontSize: 12, 
+          <Text style={{
+            color: theme?.textMuted || '#7f8c8d',
+            fontSize: 12,
             marginTop: 4,
             fontStyle: 'italic'
           }}>
@@ -775,13 +761,13 @@ export default function EnhancedHomepage() {
         </View>
 
         {/* Hydration Goal Card - Using the restored component */}
-        <HydrationGoalCard 
+        <HydrationGoalCard
           dailyStats={actualDailyStats}
           theme={theme}
         />
 
         {/* Drinking Stats - Using the restored component */}
-        <DrinkingStats 
+        <DrinkingStats
           dailyStats={actualDailyStats}
           sensorData={sensorData}
           theme={theme}
@@ -789,7 +775,7 @@ export default function EnhancedHomepage() {
 
         {/* Smart Recommendations */}
         <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
-          <SmartRecommendations 
+          <SmartRecommendations
             waterLevel={sensorData.waterLevel}
             temperature={sensorData.temperature}
             lastDrink={sensorData.lastUpdate}
@@ -798,41 +784,40 @@ export default function EnhancedHomepage() {
         </View>
 
         {/* Weekly Chart - Using the restored component */}
-<View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
-  <View style={{
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16
-  }}>
-    <Text style={{
-      color: theme?.text || '#2c3e50',
-      fontSize: 18,
-      fontWeight: 'bold'
-    }}>
-      📊 Hydration Progress
-    </Text>
-  
-  </View>
-  
-  {/* Chart content - always render the container, toggle the actual chart */}
-  <View style={{
-    overflow: 'hidden',
-    borderRadius: 16,
-    marginLeft: -30,
-    marginRight: -30,
-    marginBottom: -30,
-    
+        <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16
+          }}>
+            <Text style={{
+              color: theme?.text || '#2c3e50',
+              fontSize: 18,
+              fontWeight: 'bold'
+            }}>
+              📊 Hydration Progress
+            </Text>
+
+          </View>
+
+          {/* Chart content - always render the container, toggle the actual chart */}
+          <View style={{
+            overflow: 'hidden',
+            borderRadius: 16,
+            marginLeft: -30,
+            marginRight: -30,
+            marginBottom: -30,
 
 
-  }}>
-    <WeeklyChart 
-      weeklyData={actualWeeklyData} 
-      dailyStats={actualDailyStats}
-      theme={theme} 
-    />
-  </View>
-</View>
+          }}>
+            <WeeklyChart
+              weeklyData={actualWeeklyData}
+              dailyStats={actualDailyStats}
+              theme={theme}
+            />
+          </View>
+        </View>
 
         {/* Goal Achievement Celebration */}
         {isGoalAchieved() && showDrinkAnimation && (
@@ -863,9 +848,9 @@ export default function EnhancedHomepage() {
           </View>
         )}
       </ScrollView>
-      
+
       {/* Data Debugger Modal */}
-      <DataDebugger 
+      <DataDebugger
         visible={showDebugger}
         onClose={() => setShowDebugger(false)}
         theme={theme}
