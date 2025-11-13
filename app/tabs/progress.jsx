@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../Theme/theme';
-
-const { width } = Dimensions.get('window');
+import { auth } from '../../firebaseConfig'; // Adjust path to your firebase config
+import DailyPatternChart from '../../components/charts/DailyPatternChart';
+import ChartDataService from '../../services/chartDataservice';
 
 export default function Progress() {
   const theme = useTheme();
   const [selectedGraph, setSelectedGraph] = useState('daily');
+  const [loading, setLoading] = useState(false);
+  const [hourlyData, setHourlyData] = useState([]);
 
   const graphOptions = [
     {
@@ -40,6 +43,35 @@ export default function Progress() {
     },
   ];
 
+  // Load data when "monthly" (Daily Pattern) is selected
+  useEffect(() => {
+    if (selectedGraph === 'monthly') {
+      loadHourlyData();
+    }
+  }, [selectedGraph]);
+
+  const loadHourlyData = async () => {
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      
+      if (!user) {
+        console.log('No user logged in');
+        setLoading(false);
+        return;
+      }
+
+      const dataService = new ChartDataService(user.uid);
+      const data = await dataService.getHourlyPattern();
+      setHourlyData(data);
+      
+    } catch (error) {
+      console.error('Error loading hourly data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderGraphContent = () => {
     switch (selectedGraph) {
       case 'daily':
@@ -67,17 +99,18 @@ export default function Progress() {
           </View>
         );
       case 'monthly':
-        return (
-          <View style={styles.graphPlaceholder}>
-            <Ionicons name="analytics" size={80} color="#e74c3c" />
-            <Text style={[styles.placeholderText, { color: theme.text }]}>
-              Daily Water Pattern
-            </Text>
-            <Text style={[styles.placeholderSubtext, { color: theme.textMuted }]}>
-              Hourly intake throughout the day
-            </Text>
-          </View>
-        );
+        if (loading) {
+          return (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#e74c3c" />
+              <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+                Loading hourly data...
+              </Text>
+            </View>
+          );
+        }
+        return <DailyPatternChart data={hourlyData} />;
+        
       case 'heatmap':
         return (
           <View style={styles.graphPlaceholder}>
@@ -258,6 +291,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     opacity: 0.7,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
   },
   bottomPadding: {
     height: 100,
