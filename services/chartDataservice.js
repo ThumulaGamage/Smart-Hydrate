@@ -20,7 +20,11 @@ class ChartDataService {
       }
     }
 
-    
+    /**
+ * Get last 7 days data for weekly comparison
+ */
+
+     
     async getMonthlyData(year = null, month = null) {
       try {
         const today = new Date();
@@ -74,6 +78,51 @@ class ChartDataService {
         return [];
       }
     }
+    /**
+ * Get last 7 days data for weekly comparison
+ */
+      async getWeeklyData() {
+        try {
+          const today = new Date();
+          const weekData = [];
+          
+          const dailyStatsRef = realtimeDB.ref(`users/${this.userId}/dailyStats`);
+          const snapshot = await dailyStatsRef.once('value');
+          
+          for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateString = date.toISOString().split('T')[0];
+            
+            let consumed = 0;
+            
+            if (snapshot.exists()) {
+              snapshot.forEach((childSnapshot) => {
+                if (childSnapshot.key === dateString) {
+                  const stats = childSnapshot.val();
+                  consumed = stats.totalConsumed || 0;
+                }
+              });
+            }
+            
+            weekData.push({
+              date: dateString,
+              dayName: date.toLocaleDateString('en-US', { weekday: 'short' }),
+              consumed
+            });
+          }
+          
+          console.log(`📊 Weekly data prepared: ${weekData.length} days`);
+          return weekData;
+          
+        } catch (error) {
+          console.error('❌ Error getting weekly data:', error);
+          return [];
+        }
+      }
+
+
+
   async getHourlyPattern(date = null) {
     try {
       const targetDate = date || new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD

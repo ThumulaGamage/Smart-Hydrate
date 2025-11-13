@@ -6,7 +6,7 @@ import { auth } from '../../config/firebaseConfig';
 import DailyPatternChart from '../../components/charts/DailyPatternChart';
 import HeatmapCalendar from '../../components/charts/HeatmapCalendar';
 import ChartDataService from '../../services/chartDataservice';
-
+import WeeklyColumnChart from '../../components/charts/WeeklyColumnChart';
 export default function Progress() {
   const theme = useTheme();
   const [selectedGraph, setSelectedGraph] = useState('daily');
@@ -14,6 +14,7 @@ export default function Progress() {
   const [hourlyData, setHourlyData] = useState([]);
   const [monthlyData, setMonthlyData] = useState([]); 
   const [dailyGoal, setDailyGoal] = useState(2500); 
+  const [weeklyData, setWeeklyData] = useState([]);
   const graphOptions = [
     {
       id: 'daily',
@@ -47,11 +48,13 @@ export default function Progress() {
 
   // Load data when "monthly" (Daily Pattern) is selected
   useEffect(() => {
-    if (selectedGraph === 'monthly') {
-      loadHourlyData();
-    }else if (selectedGraph === 'heatmap') {
-    loadMonthlyData(); 
-    }
+  if (selectedGraph === 'monthly') {
+    loadHourlyData();
+  } else if (selectedGraph === 'heatmap') {
+    loadMonthlyData();
+  } else if (selectedGraph === 'weekly') {
+    loadWeeklyData(); 
+  }
   }, [selectedGraph]);
 
   const loadHourlyData = async () => {
@@ -71,6 +74,30 @@ export default function Progress() {
       
     } catch (error) {
       console.error('Error loading hourly data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const loadWeeklyData = async () => {
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const dataService = new ChartDataService(user.uid);
+      const data = await dataService.getWeeklyData();
+      const profile = await dataService.getUserProfile();
+      const goal = profile?.dailyGoal || 2500;
+      
+      setWeeklyData(data);
+      setDailyGoal(goal);
+      
+    } catch (error) {
+      console.error('❌ Error loading weekly data:', error);
     } finally {
       setLoading(false);
     }
@@ -125,17 +152,17 @@ export default function Progress() {
           </View>
         );
       case 'weekly':
-        return (
-          <View style={styles.graphPlaceholder}>
-            <Ionicons name="bar-chart" size={80} color="#27ae60" />
-            <Text style={[styles.placeholderText, { color: theme.text }]}>
-              Grouped Column Chart
-            </Text>
-            <Text style={[styles.placeholderSubtext, { color: theme.textMuted }]}>
-              Recommended vs Consumed (Last 7 days)
-            </Text>
-          </View>
-        );
+        if (loading) {
+            return (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#27ae60" />
+                <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+                  Loading weekly data...
+                </Text>
+              </View>
+            );
+          }
+          return <WeeklyColumnChart weekData={weeklyData} dailyGoal={dailyGoal} />;
       case 'monthly':
         if (loading) {
           return (
