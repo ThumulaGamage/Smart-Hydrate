@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../Theme/theme';
-import { auth } from '../../firebaseConfig'; // Adjust path to your firebase config
+import { auth } from '../../config/firebaseConfig';
 import DailyPatternChart from '../../components/charts/DailyPatternChart';
+import HeatmapCalendar from '../../components/charts/HeatmapCalendar';
 import ChartDataService from '../../services/chartDataservice';
 
 export default function Progress() {
@@ -11,7 +12,8 @@ export default function Progress() {
   const [selectedGraph, setSelectedGraph] = useState('daily');
   const [loading, setLoading] = useState(false);
   const [hourlyData, setHourlyData] = useState([]);
-
+  const [monthlyData, setMonthlyData] = useState([]); 
+  const [dailyGoal, setDailyGoal] = useState(2500); 
   const graphOptions = [
     {
       id: 'daily',
@@ -47,6 +49,8 @@ export default function Progress() {
   useEffect(() => {
     if (selectedGraph === 'monthly') {
       loadHourlyData();
+    }else if (selectedGraph === 'heatmap') {
+    loadMonthlyData(); 
     }
   }, [selectedGraph]);
 
@@ -70,6 +74,40 @@ export default function Progress() {
     } finally {
       setLoading(false);
     }
+  };
+  const loadMonthlyData = async () => {
+  try {
+    setLoading(true);
+    const user = auth.currentUser;
+    
+    console.log('🔹 Loading monthly data for user:', user?.uid);
+    
+    if (!user) {
+      console.log('❌ No user logged in');
+      setLoading(false);
+      return;
+    }
+
+    const dataService = new ChartDataService(user.uid);
+    const data = await dataService.getMonthlyData();
+    
+    console.log('📅 Monthly data from Firebase:', data);
+    console.log('📅 Data length:', data.length);
+    
+    // Get user's daily goal
+    const profile = await dataService.getUserProfile();
+    const goal = profile?.dailyGoal || 2500;
+    
+    console.log('🎯 User daily goal:', goal);
+    
+    setMonthlyData(data);
+    setDailyGoal(goal);
+    
+  } catch (error) {
+    console.error('❌ Error loading monthly data:', error);
+  } finally {
+    setLoading(false);
+  }
   };
 
   const renderGraphContent = () => {
@@ -112,17 +150,17 @@ export default function Progress() {
         return <DailyPatternChart data={hourlyData} />;
         
       case 'heatmap':
-        return (
-          <View style={styles.graphPlaceholder}>
-            <Ionicons name="calendar" size={80} color="#9b59b6" />
-            <Text style={[styles.placeholderText, { color: theme.text }]}>
-              Heatmap Calendar
-            </Text>
-            <Text style={[styles.placeholderSubtext, { color: theme.textMuted }]}>
-              Monthly consistency view
-            </Text>
-          </View>
-        );
+        if (loading) {
+          return (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#9b59b6" />
+              <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+                Loading monthly data...
+              </Text>
+            </View>
+          );
+        }
+  return <HeatmapCalendar data={monthlyData} dailyGoal={dailyGoal} />;
       default:
         return null;
     }

@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import useTheme from '../../Theme/theme';
 import { Ionicons } from '@expo/vector-icons';
+
+
 const { width } = Dimensions.get('window');
 
 const DailyPatternChart = ({ data = [] }) => {
