@@ -7,6 +7,9 @@ import DailyPatternChart from '../../components/charts/DailyPatternChart';
 import HeatmapCalendar from '../../components/charts/HeatmapCalendar';
 import ChartDataService from '../../services/chartDataservice';
 import WeeklyColumnChart from '../../components/charts/WeeklyColumnChart';
+import CircularProgressChart from '../../components/charts/CircularProgressChart';
+
+
 export default function Progress() {
   const theme = useTheme();
   const [selectedGraph, setSelectedGraph] = useState('daily');
@@ -15,6 +18,7 @@ export default function Progress() {
   const [monthlyData, setMonthlyData] = useState([]); 
   const [dailyGoal, setDailyGoal] = useState(2500); 
   const [weeklyData, setWeeklyData] = useState([]);
+  const [todayData, setTodayData] = useState({ consumed: 0 });
   const graphOptions = [
     {
       id: 'daily',
@@ -48,14 +52,43 @@ export default function Progress() {
 
   // Load data when "monthly" (Daily Pattern) is selected
   useEffect(() => {
-  if (selectedGraph === 'monthly') {
-    loadHourlyData();
-  } else if (selectedGraph === 'heatmap') {
-    loadMonthlyData();
-  } else if (selectedGraph === 'weekly') {
-    loadWeeklyData(); 
-  }
+    if (selectedGraph === 'daily') {
+      loadTodayData(); // ADD THIS
+    } else if (selectedGraph === 'monthly') {
+      loadHourlyData();
+    } else if (selectedGraph === 'heatmap') {
+      loadMonthlyData();
+    } else if (selectedGraph === 'weekly') {
+      loadWeeklyData();
+    }
   }, [selectedGraph]);
+
+  const loadTodayData = async () => {
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const dataService = new ChartDataService(user.uid);
+      const data = await dataService.getTodayData();
+      const profile = await dataService.getUserProfile();
+      const goal = profile?.dailyGoal || 2500;
+      
+      console.log('📊 Today data:', data);
+      
+      setTodayData(data);
+      setDailyGoal(goal);
+      
+    } catch (error) {
+      console.error('❌ Error loading today data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadHourlyData = async () => {
     try {
@@ -140,17 +173,17 @@ export default function Progress() {
   const renderGraphContent = () => {
     switch (selectedGraph) {
       case 'daily':
-        return (
-          <View style={styles.graphPlaceholder}>
-            <Ionicons name="pie-chart" size={80} color="#3498db" />
-            <Text style={[styles.placeholderText, { color: theme.text }]}>
-              Circular Progress Ring
-            </Text>
-            <Text style={[styles.placeholderSubtext, { color: theme.textMuted }]}>
-              Today's goal visualization
-            </Text>
-          </View>
-        );
+       if (loading) {
+          return (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#3498db" />
+              <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+                Loading today's progress...
+              </Text>
+            </View>
+          );
+        }
+        return <CircularProgressChart consumed={todayData.consumed} goal={dailyGoal} />;
       case 'weekly':
         if (loading) {
             return (

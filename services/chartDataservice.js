@@ -78,9 +78,28 @@ class ChartDataService {
         return [];
       }
     }
-    /**
- * Get last 7 days data for weekly comparison
- */
+    
+      async getTodayData() {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const dailyStatsRef = realtimeDB.ref(`users/${this.userId}/dailyStats/${today}`);
+          const snapshot = await dailyStatsRef.once('value');
+          
+          if (snapshot.exists()) {
+            const stats = snapshot.val();
+            return {
+              consumed: stats.totalConsumed || 0,
+              date: today
+            };
+          }
+          
+          return { consumed: 0, date: today };
+          
+        } catch (error) {
+          console.error('Error getting today data:', error);
+          return { consumed: 0, date: new Date().toISOString().split('T')[0] };
+        }
+      }
       async getWeeklyData() {
         try {
           const today = new Date();
