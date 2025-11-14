@@ -9,6 +9,9 @@ import { auth } from '../../config/firebaseConfig';
 // Import the component for the Healthy tab
 import HealthyHydrationPlan from './HealthyHydrationPlan';
 
+// Import the component for the Disease tab
+import DiseaseHydrationPlan from './DiseaseHydrationPlan';
+
 // --- Global Variables ---
 export let database;
 export let isAuthReady = false;
@@ -73,21 +76,6 @@ const useFirebaseAuth = () => {
   return authLoading;
 };
 
-// --- Disease Content Component (Placeholder) ---
-const DiseaseContent = () => (
-  <View style={styles.diseaseContainer}>
-    <Text style={[styles.diseaseTitle, { color: theme.primaryText }]}>
-      Hydration Plan for Medical Conditions
-    </Text>
-    <Text style={[styles.diseaseText, { color: theme.secondaryText }]}>
-      This section is dedicated to setting fluid restrictions and monitoring based on physician advice.
-    </Text>
-    <Text style={[styles.diseaseWarning, { color: theme.danger }]}>
-      ⚠️ Consult your doctor before setting any fluid goals.
-    </Text>
-  </View>
-);
-
 // --- Main App Component (Tab Navigator) ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('Healthy');
@@ -137,7 +125,7 @@ export default function App() {
             <Text style={[styles.loadingText, { color: theme.secondaryText }]}>Loading...</Text>
           </View>
         ) : (
-          activeTab === 'Healthy' ? <HealthyHydrationPlan /> : <DiseaseContent />
+          activeTab === 'Healthy' ? <HealthyHydrationPlan /> : <DiseaseHydrationPlan />
         )}
       </View>
     </View>
@@ -194,27 +182,4 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
   },
-  diseaseContainer: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  diseaseTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  diseaseText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  diseaseWarning: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 20,
-    textAlign: 'center',
-  }
 });
