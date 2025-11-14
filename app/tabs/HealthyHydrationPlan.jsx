@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { getDatabase, ref, set, onValue, update } from 'firebase/database';
-import { getAuth } from 'firebase/auth';
+import { ref, onValue, update } from 'firebase/database';
 
-// IMPORTING Theme, Utilities from the main file
+// Import auth and WaterBottleService from your existing Firebase config (like HomeTab does)
+import { auth, WaterBottleService } from '../../config/firebaseConfig';
+
+// IMPORTING Theme, Utilities, and database from the main file
 import {
     theme, AVAILABLE_GAPS, WAKING_HOURS,
-    getTodayDateString
+    getTodayDateString, database
 } from './customize-hydration';
 
 export default function HealthyHydrationPlan() {
@@ -18,17 +20,18 @@ export default function HealthyHydrationPlan() {
   const [goalAchieved, setGoalAchieved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [waterBottleService, setWaterBottleService] = useState(null);
 
-  // Get Firebase instances
-  const auth = getAuth();
-  const database = getDatabase();
-
-  // Wait for authentication
+  // Wait for authentication (same as HomeTab)
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         setUserId(user.uid);
         console.log('User authenticated:', user.uid);
+
+        // Initialize WaterBottleService (same as HomeTab)
+        const service = new WaterBottleService(user.uid);
+        setWaterBottleService(service);
       } else {
         setUserId(null);
         setLoading(false);
@@ -38,58 +41,70 @@ export default function HealthyHydrationPlan() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time listener for Goal and Consumption Data
-  const loadHydrationPlan = useCallback(() => {
-    if (!userId || !database) {
+  // Real-time listener for consumption data (like HomeTab)
+  useEffect(() => {
+    if (!userId || !waterBottleService) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    console.log('🔄 Setting up real-time listeners for hydration plan...');
 
-    // Listen for today's stats (this is where goal is stored in your structure)
-    const todayStr = getTodayDateString();
-    const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
+    // Listen to today's stats in real-time (SAME AS HOMETAB)
+    const unsubscribeTodayStats = waterBottleService.onTodayStats((stats) => {
+      console.log('📊 Real-time stats update received:', stats);
 
-    const unsubscribeStats = onValue(dailyStatsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        console.log('Daily stats loaded:', data);
-
-        // Load goal from dailyStats
-        if (data.goal !== undefined) {
-          setDailyGoal(String(data.goal));
-        }
-
-        // Load consumption
-        const consumed = data.sessions?.totalConsumed || 0;
+      if (stats) {
+        // Update total consumed (real-time from bottle)
+        const consumed = stats.totalConsumed || 0;
         setTotalConsumed(consumed);
 
+        // Update goal if exists
+        if (stats.goal !== undefined && stats.goal !== null) {
+          setDailyGoal(String(stats.goal));
+        }
+
         // Check if goal achieved
-        const goal = data.goal || 0;
+        const goal = stats.goal || 0;
         setGoalAchieved(consumed >= goal && goal > 0);
       } else {
-        console.log('No daily stats found for today - user can set new goal');
-        setDailyGoal('');
+        console.log('No stats found for today');
         setTotalConsumed(0);
         setGoalAchieved(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error("Error listening to daily stats:", error);
+
       setLoading(false);
     });
 
-    return () => {
-      unsubscribeStats();
-    };
-  }, [userId, database]);
+    // Also listen to profile for saved goal and reminder gap
+    const profileRef = ref(database, `users/${userId}/profile`);
+    const unsubscribeProfile = onValue(profileRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        console.log('📋 Profile data loaded:', data);
 
-  useEffect(() => {
-    if (userId) {
-      return loadHydrationPlan();
-    }
-  }, [userId, loadHydrationPlan]);
+        if (data.dailyGoal) {
+          setDailyGoal(String(data.dailyGoal));
+        }
+        if (data.reminderGap) {
+          setReminderGap(data.reminderGap);
+          if (data.reminderGap > 4) {
+            setCustomGap(String(data.reminderGap));
+          }
+        }
+      }
+    }, (error) => {
+      console.error("Error listening to profile:", error);
+    });
+
+    // Cleanup listeners
+    return () => {
+      console.log('🧹 Cleaning up hydration plan listeners');
+      if (unsubscribeTodayStats) unsubscribeTodayStats();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
+  }, [userId, waterBottleService, database]);
 
   // Calculate intake per reminder
   const calculatedIntake = useMemo(() => {
@@ -113,7 +128,7 @@ export default function HealthyHydrationPlan() {
     if (gapValue > 0 && gapValue <= WAKING_HOURS) {
       setReminderGap(gapValue);
     } else if (text === '') {
-      setReminderGap(3); // Reset to default
+      setReminderGap(3);
       setCustomGap('');
     }
   };
@@ -141,25 +156,32 @@ export default function HealthyHydrationPlan() {
       const todayStr = getTodayDateString();
       const now = Date.now();
 
-      // Update goal in dailyStats (following your exact database structure)
-      const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
+      // Save to profile (user's default settings including reminder gap)
+      const profileRef = ref(database, `users/${userId}/profile`);
+      await update(profileRef, {
+        dailyGoal: goalValue,
+        reminderGap: parseInt(reminderGap),  // SAVE TIME GAP HERE
+        lastUpdated: now,
+        updatedAt: new Date().toISOString()
+      });
 
-      // Use update to preserve existing fields and only update goal
+      // Update today's goal in dailyStats
+      const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
       await update(dailyStatsRef, {
         goal: goalValue,
         date: todayStr,
         lastUpdated: now,
       });
 
-      console.log('Goal saved successfully to Realtime Database');
+      console.log('✅ Goal and reminder gap saved successfully to Firebase');
       Alert.alert(
-        "Goal Saved!",
-        `Your daily water goal of ${goalValue}ml has been saved successfully.\n\nYou'll receive ${calculatedIntake.reminders} reminders to drink ${calculatedIntake.intake}ml each.`,
+        "Plan Saved!",
+        `Your daily water goal of ${goalValue}ml has been saved successfully.\n\nReminder Gap: Every ${reminderGap} hours\nYou'll receive ${calculatedIntake.reminders} reminders to drink ${calculatedIntake.intake}ml each.`,
         [{ text: "OK" }]
       );
     } catch (error) {
-      console.error("Failed to save goal to Realtime Database:", error);
-      Alert.alert("Save Error", `Failed to save goal: ${error.message}\n\nPlease check your connection and try again.`);
+      console.error("❌ Failed to save plan to Realtime Database:", error);
+      Alert.alert("Save Error", `Failed to save plan: ${error.message}\n\nPlease check your connection and try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -244,10 +266,13 @@ export default function HealthyHydrationPlan() {
           </View>
         </View>
 
-        {/* 3. Real-Time Consumption Status */}
+        {/* 3. Real-Time Consumption Status (LIVE DATA FROM BOTTLE) */}
         <View style={[styles.realTimeCard, { backgroundColor: theme.secondary }]}>
           <Text style={[styles.summaryTitle, { color: theme.primaryText }]}>
-            Current Hydration Progress
+            🔴 Live Hydration Progress
+          </Text>
+          <Text style={[styles.liveIndicator, { color: theme.accent }]}>
+            ● Real-time from your water bottle
           </Text>
 
           <View style={styles.progressContainer}>
@@ -259,12 +284,23 @@ export default function HealthyHydrationPlan() {
 
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Total Consumed Today:</Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>{totalConsumed} ml</Text>
+            <Text style={[styles.summaryValue, { color: goalAchieved ? theme.accent : theme.primaryText }]}>
+              {totalConsumed} ml
+            </Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Daily Goal:</Text>
-            <Text style={[styles.summaryValue, { color: theme.accent }]}>{currentGoal > 0 ? currentGoal : '--'} ml</Text>
+            <Text style={[styles.summaryValue, { color: theme.accent }]}>
+              {currentGoal > 0 ? currentGoal : '--'} ml
+            </Text>
           </View>
+
+          {goalAchieved && (
+            <View style={styles.achievementBanner}>
+              <Text style={styles.achievementEmoji}>🎉</Text>
+              <Text style={styles.achievementText}>Goal Achieved!</Text>
+            </View>
+          )}
         </View>
 
         {/* 4. Calculated Plan Summary and Save */}
@@ -272,6 +308,12 @@ export default function HealthyHydrationPlan() {
           <Text style={[styles.summaryTitle, { color: theme.accent }]}>
             Your Calculated Intake Plan:
           </Text>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminder Gap:</Text>
+            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
+              Every {reminderGap} hours
+            </Text>
+          </View>
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminders Per Day:</Text>
             <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
@@ -293,7 +335,7 @@ export default function HealthyHydrationPlan() {
             {isSaving ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.saveButtonText}>Save Goal</Text>
+              <Text style={styles.saveButtonText}>Save Plan</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -391,6 +433,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
   },
+  liveIndicator: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 15,
+  },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -431,5 +478,21 @@ const styles = StyleSheet.create({
   progressText: {
     textAlign: 'right',
     fontSize: 12,
+  },
+  achievementBanner: {
+    marginTop: 15,
+    padding: 15,
+    backgroundColor: '#0D9488',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  achievementEmoji: {
+    fontSize: 32,
+    marginBottom: 5,
+  },
+  achievementText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
