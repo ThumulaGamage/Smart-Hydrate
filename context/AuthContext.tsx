@@ -23,10 +23,6 @@ export function AuthProvider({ children }) {
       
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Mark as returning user
-        await StorageHelper.setNotFirstTimeUser().catch(err => 
-          console.warn('Could not mark as returning user:', err)
-        );
         console.log('✅ User authenticated and set');
       } else {
         setUser(null);

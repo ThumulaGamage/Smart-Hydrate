@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, firestore, FieldValue } from '../../config/firebaseConfig';
 import { useUser } from '../../context/UserDetailContext';
 import useTheme from '../../Theme/theme';
-import { StorageHelper } from '../../utils/storage';
 
 import ThemedButton from '../../components/ThemedButton';
 import ThemedText from '../../components/ThemedText';
@@ -25,7 +24,6 @@ export default function SignIn() {
   const theme = useTheme();
   const { refreshUserDetails } = useUser();
 
-  // Memoize expensive or repeated logic with useCallback
   const handleSignIn = useCallback(async () => {
     if (!email.trim() || !password.trim()) {
       showErrorMessage('Please enter both email and password');
@@ -46,10 +44,6 @@ export default function SignIn() {
         console.warn('⚠️ Could not update last login time:', err.message)
       );
 
-      // Mark as returning user
-      await StorageHelper.setNotFirstTimeUser();
-      console.log('✅ Marked as returning user');
-
       // Refresh user context if available
       if (refreshUserDetails) {
         await refreshUserDetails().catch((err) =>
@@ -58,11 +52,12 @@ export default function SignIn() {
         console.log('✅ User details refreshed successfully');
       }
 
-      // Clear form and navigate
+      // Clear form
       setEmail('');
       setPassword('');
       console.log('🎉 Sign in process completed successfully');
-      router.replace('/homepage');
+      
+      // Navigation will be handled automatically by _layout.tsx
 
     } catch (error) {
       console.error('❌ Sign in failed:', error);
@@ -72,13 +67,17 @@ export default function SignIn() {
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, router, refreshUserDetails]);
+  }, [email, password, refreshUserDetails]);
 
   const updateLastLogin = async (uid) => {
-    await firestore.collection('users').doc(uid).update({
-      lastLoginAt: FieldValue.serverTimestamp(),
-    });
-    console.log('✅ Last login time updated');
+    try {
+      await firestore.collection('users').doc(uid).update({
+        lastLoginAt: FieldValue.serverTimestamp(),
+      });
+      console.log('✅ Last login time updated');
+    } catch (error) {
+      console.warn('⚠️ Firestore update failed, continuing anyway');
+    }
   };
 
   const getFriendlyErrorMessage = (error) => {
@@ -105,8 +104,6 @@ export default function SignIn() {
   };
 
   const closeModal = () => setModalVisible(false);
-
- 
 
   return (
     <ThemedView style={styles.container}>

@@ -1,7 +1,5 @@
-// context/UserDetailContext.jsx - Updated with proper Firebase sync
+// context/UserDetailContext.jsx - Fixed with proper compat imports
 
-import { onAuthStateChanged, signOut, updateProfile, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, firestore, realtimeDB, WaterBottleService, FieldValue } from '../config/firebaseConfig';
 
@@ -108,10 +106,10 @@ export const UserProvider = ({ children }) => {
       if (useFirestore) {
         try {
           console.log('Attempting to fetch user from Firestore...');
-          const userDocRef = doc(firestore, 'users', uid);
-          const userDoc = await getDoc(userDocRef);
+          const userDocRef = firestore.collection('users').doc(uid);
+          const userDoc = await userDocRef.get();
           
-          if (userDoc.exists()) {
+          if (userDoc.exists) {
             console.log('User details fetched from Firestore');
             const userData = userDoc.data();
             setUserDetails(userData);
@@ -146,7 +144,7 @@ export const UserProvider = ({ children }) => {
     }
   };
 
-  // Updated updateUserDetails method with proper Firebase sync
+  // Updated updateUserDetails method with proper Firebase compat SDK
   const updateUserDetails = async (newDetails) => {
     try {
       if (!auth.currentUser) {
@@ -160,16 +158,16 @@ export const UserProvider = ({ children }) => {
 
       console.log('Starting profile update for user:', uid);
 
-      // Handle email update
+      // Handle email update (compat SDK)
       if (newDetails.newEmail && newDetails.currentPassword) {
         try {
           console.log('Updating email...');
-          const credential = EmailAuthProvider.credential(
+          const credential = auth.EmailAuthProvider.credential(
             auth.currentUser.email,
             newDetails.currentPassword
           );
-          await reauthenticateWithCredential(auth.currentUser, credential);
-          await updateEmail(auth.currentUser, newDetails.newEmail);
+          await auth.currentUser.reauthenticateWithCredential(credential);
+          await auth.currentUser.updateEmail(newDetails.newEmail);
           console.log('Email updated successfully');
           authSuccess = true;
         } catch (error) {
@@ -178,16 +176,16 @@ export const UserProvider = ({ children }) => {
         }
       }
 
-      // Handle password update
+      // Handle password update (compat SDK)
       if (newDetails.newPassword && newDetails.currentPassword) {
         try {
           console.log('Updating password...');
-          const credential = EmailAuthProvider.credential(
+          const credential = auth.EmailAuthProvider.credential(
             auth.currentUser.email,
             newDetails.currentPassword
           );
-          await reauthenticateWithCredential(auth.currentUser, credential);
-          await updatePassword(auth.currentUser, newDetails.newPassword);
+          await auth.currentUser.reauthenticateWithCredential(credential);
+          await auth.currentUser.updatePassword(newDetails.newPassword);
           console.log('Password updated successfully');
           authSuccess = true;
         } catch (error) {
@@ -196,15 +194,14 @@ export const UserProvider = ({ children }) => {
         }
       }
 
-      // Handle display name update
+      // Handle display name update (compat SDK)
       if (newDetails.name && newDetails.name !== auth.currentUser.displayName) {
         try {
-          await updateProfile(auth.currentUser, { displayName: newDetails.name });
+          await auth.currentUser.updateProfile({ displayName: newDetails.name });
           console.log('Display name updated successfully');
           authSuccess = true;
         } catch (error) {
           console.error('Display name update failed:', error);
-          // Don't fail the entire process for this
         }
       }
 
@@ -233,7 +230,7 @@ export const UserProvider = ({ children }) => {
       if (useFirestore) {
         try {
           console.log('Updating Firestore...');
-          const userDocRef = doc(firestore, 'users', uid);
+          const userDocRef = firestore.collection('users').doc(uid);
           
           const firestoreUpdateData = {
             name: profileUpdateData.name,
@@ -252,7 +249,7 @@ export const UserProvider = ({ children }) => {
             }
           });
 
-          await updateDoc(userDocRef, firestoreUpdateData);
+          await userDocRef.update(firestoreUpdateData);
           firestoreSuccess = true;
           console.log('Firestore updated successfully');
         } catch (error) {
@@ -284,7 +281,7 @@ export const UserProvider = ({ children }) => {
       } catch (error) {
         console.error('Realtime Database update failed:', error);
         if (!firestoreSuccess) {
-          throw error; // Only throw if both failed
+          throw error;
         }
       }
 
@@ -317,15 +314,16 @@ export const UserProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
+    console.log('👤 UserDetailContext: Setting up auth listener...');
+    
+    const unsubscribe = auth.onAuthStateChanged(
       async (firebaseUser) => {
         try {
           setLoading(true);
           setError(null);
           
           if (firebaseUser) {
-            console.log('User authenticated:', firebaseUser.uid);
+            console.log('👤 UserDetailContext: User authenticated:', firebaseUser.uid);
             
             const basicUserData = {
               uid: firebaseUser.uid,
@@ -341,36 +339,39 @@ export const UserProvider = ({ children }) => {
             // Fetch additional user details
             await fetchUserDetails(firebaseUser.uid);
           } else {
-            console.log('User signed out');
+            console.log('👤 UserDetailContext: User signed out');
             setUser(null);
             setUserDetails(null);
-            setUseFirestore(true); // Reset Firestore preference for next login
+            setUseFirestore(true);
           }
         } catch (error) {
-          console.error('Auth state change error:', error);
+          console.error('👤 UserDetailContext: Auth state change error:', error);
           setError('Authentication error occurred');
         } finally {
           setLoading(false);
         }
       },
       (error) => {
-        console.error('Auth observer error:', error);
+        console.error('👤 UserDetailContext: Auth observer error:', error);
         setError('Authentication error occurred');
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      console.log('👤 UserDetailContext: Cleaning up auth listener');
+      unsubscribe();
+    };
   }, [useFirestore]);
 
   const logout = async () => {
     try {
       setLoading(true);
-      await signOut(auth);
+      await auth.signOut();
       setUser(null);
       setUserDetails(null);
       setError(null);
-      setUseFirestore(true); // Reset preference
+      setUseFirestore(true);
       console.log('User logged out successfully');
     } catch (error) {
       console.error('Error signing out:', error);
@@ -393,7 +394,6 @@ export const UserProvider = ({ children }) => {
     }
   };
 
-  // Clear error function
   const clearError = () => {
     setError(null);
   };
