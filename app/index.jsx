@@ -12,8 +12,8 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       {/* Hero Image with Gradient Overlay */}
       <View style={styles.imageContainer}>
-        <Image 
-          source={require('../assets/images/start.jpg')} 
+        <Image
+          source={require('../assets/images/start.jpg')}
           style={styles.heroImage}
           resizeMode="cover"
         />
@@ -32,7 +32,7 @@ export default function WelcomeScreen() {
 
         {/* Action Buttons */}
         <View style={styles.buttonGroup}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.button, styles.primaryButton]}
             onPress={() => router.push('/auth/signUp')}
             activeOpacity={0.8}
@@ -40,7 +40,7 @@ export default function WelcomeScreen() {
             <Text style={[styles.buttonText, styles.primaryButtonText]}>Get Started</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.button, styles.secondaryButton]}
             onPress={() => router.push('/auth/signIn')}
             activeOpacity={0.8}
