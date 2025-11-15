@@ -9,7 +9,7 @@ import { auth } from '../../config/firebaseConfig';
 // Import the component for the Healthy tab
 import HealthyHydrationPlan from './HealthyHydrationPlan';
 
-// Import the component for the Disease tab
+// Import the component for the Disease taba
 import DiseaseHydrationPlan from './DiseaseHydrationPlan';
 
 // --- Global Variables ---

@@ -1,6 +1,3 @@
-// components/IntakeComponents.jsx
-// Updated version with real data integration and new user handling
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
@@ -11,11 +8,17 @@ import {
   ScrollView,
   StyleSheet
 } from 'react-native';
+// Import Svg components required for the circular chart
+import Svg, { Circle } from 'react-native-svg';
 import { BarChart } from 'react-native-chart-kit';
 import { MaterialIcons } from '@expo/vector-icons';
 import { WaterBottleService } from '../../config/firebaseConfig';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+// --- Circular Chart Constants (now dynamic inside component) ---
+const STROKE_WIDTH = 20;
+const CIRCLE_SIZE = 220;
 
 // Helper function for cross-platform card styles
 const getCardStyle = (theme) => ({
@@ -37,57 +40,58 @@ const getCardStyle = (theme) => ({
 });
 
 // =======================================================
-// 1. AUTO-TRACKING HYDRATION GOAL COMPONENT
+// 1. UPDATED HYDRATION GOAL CARD (REPLACED WITH YOUR DESIGN)
 // =======================================================
 export const HydrationGoalCard = ({ dailyStats, theme }) => {
-  const progress = Math.min((dailyStats.totalConsumed / dailyStats.goal) * 100, 100);
-  const remaining = Math.max(dailyStats.goal - dailyStats.totalConsumed, 0);
-  
-  const getProgressColor = (progress) => {
-    if (progress >= 100) return '#4CAF50';
-    if (progress >= 75) return '#8BC34A';
-    if (progress >= 50) return '#FFC107';
-    if (progress >= 25) return '#FF9800';
-    return '#FF5722';
+  const consumed = dailyStats.totalConsumed || 0;
+  const goal = dailyStats.goal || 2500;
+  const isNewUser = dailyStats.isNewUser && consumed === 0;
+
+  // Calculate percentage
+  const percentage = Math.min(Math.round((consumed / goal) * 100), 100);
+  const remaining = Math.max(goal - consumed, 0);
+
+  // Determine color based on progress
+  const getProgressColor = () => {
+    if (percentage >= 100) return '#27ae60'; // Green - Goal achieved
+    if (percentage >= 75) return '#3498db';  // Blue - Good progress
+    if (percentage >= 50) return '#f39c12';  // Orange - Half way
+    return '#e74c3c'; // Red - Need more water
   };
 
-  // Show new user state
-  if (dailyStats.isNewUser && dailyStats.totalConsumed === 0) {
+  const progressColor = getProgressColor();
+
+  // Get motivational message
+  const getMessage = () => {
+    if (percentage >= 100) return 'Goal Achieved! 🎉';
+    if (percentage >= 75) return 'Almost there! 💪';
+    if (percentage >= 50) return 'Keep going! 💧';
+    return 'Stay hydrated! 🚰';
+  };
+
+  // Circle calculations
+  const size = CIRCLE_SIZE;
+  const strokeWidth = STROKE_WIDTH;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progressOffset = circumference - (percentage / 100) * circumference;
+
+  // --- Empty State (New User) ---
+  if (isNewUser) {
     return (
-      <View style={[getCardStyle(theme), { borderWidth: 2, borderColor: theme?.border || '#E0E0E0', borderStyle: 'dashed' }]}>
-        {/* Header */}
-        <View style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16
-        }}>
-          <Text style={{
-            color: theme?.primary || '#1976D2',
-            fontSize: 18,
-            fontWeight: 'bold'
-          }}>
-            Daily Hydration Goal
-          </Text>
-        </View>
-        
-        {/* Empty state */}
-        <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+      <View style={[getCardStyle(theme), styles.emptyCard]}>
+        <Text style={[styles.title, { color: theme?.text || '#2c3e50' }]}>
+          Today's Progress
+        </Text>
+        <Text style={[styles.subtitle, { color: theme?.textMuted || '#7f8c8d' }]}>
+          Your daily hydration goal
+        </Text>
+        <View style={styles.emptyState}>
           <MaterialIcons name="local-drink" size={48} color={theme?.textMuted || '#BDBDBD'} />
-          <Text style={{
-            color: theme?.text || '#2c3e50',
-            fontSize: 20,
-            fontWeight: 'bold',
-            marginTop: 12,
-            marginBottom: 4
-          }}>
-            {dailyStats.goal}ml Goal Set
+          <Text style={[styles.emptyTextBold, { color: theme?.text || '#2c3e50' }]}>
+            {goal}ml Goal Set
           </Text>
-          <Text style={{
-            color: theme?.textMuted || '#7f8c8d',
-            fontSize: 14,
-            textAlign: 'center'
-          }}>
+          <Text style={[styles.emptyTextMuted, { color: theme?.textMuted || '#7f8c8d' }]}>
             Start drinking to begin tracking your progress
           </Text>
         </View>
@@ -95,136 +99,322 @@ export const HydrationGoalCard = ({ dailyStats, theme }) => {
     );
   }
 
+  // --- Progress State (Enhanced Circular Chart) ---
   return (
     <View style={getCardStyle(theme)}>
       {/* Header */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16
-      }}>
-        <Text style={{
-          color: theme?.primary || '#1976D2',
-          fontSize: 18,
-          fontWeight: 'bold'
-        }}>
-          Daily Hydration Goal
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme?.text || '#2c3e50' }]}>
+          Today's Progress
         </Text>
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: 'rgba(25, 118, 210, 0.1)',
-          paddingHorizontal: 8,
-          paddingVertical: 4,
-          borderRadius: 12
-        }}>
+        <View style={styles.badge}>
           <MaterialIcons name="sensors" size={14} color="#1976D2" />
-          <Text style={{
-            color: '#1976D2',
-            fontSize: 12,
-            marginLeft: 4
-          }}>
-            Auto-tracked
+          <Text style={styles.badgeText}>Auto-tracked</Text>
+        </View>
+      </View>
+      <Text style={[styles.subtitle, { color: theme?.textMuted || '#7f8c8d', marginBottom: 16 }]}>
+        Your daily hydration goal
+      </Text>
+
+      {/* Circular Progress Ring */}
+      <View style={styles.circleContainer}>
+        <Svg width={size} height={size}>
+          {/* Background Circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={theme?.textMuted || '#e0e0e0'}
+            strokeWidth={strokeWidth}
+            fill="none"
+            opacity={0.2}
+          />
+          
+          {/* Progress Circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={progressColor}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={progressOffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </Svg>
+
+        {/* Center Text */}
+        <View style={styles.centerTextContainer}>
+          <Text style={[styles.percentageText, { color: progressColor }]}>
+            {percentage}%
+          </Text>
+          <Text style={[styles.consumedText, { color: theme?.text || '#2c3e50' }]}>
+            {consumed}ml
+          </Text>
+          <Text style={[styles.goalText, { color: theme?.textMuted || '#7f8c8d' }]}>
+            of {goal}ml
           </Text>
         </View>
       </View>
-      
-      {/* Progress Stats */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'baseline',
-        marginBottom: 12
-      }}>
-        <Text style={{
-          color: getProgressColor(progress),
-          fontSize: 32,
-          fontWeight: 'bold'
-        }}>
-          {Math.round(dailyStats.totalConsumed)}ml
-        </Text>
-        <Text style={{
-          color: theme?.textMuted || '#7f8c8d',
-          fontSize: 16
-        }}>
-          of {dailyStats.goal}ml
-        </Text>
-      </View>
-      
-      {/* Progress Bar */}
-      <View style={{
-        backgroundColor: theme?.background || '#E3F2FD',
-        height: 20,
-        borderRadius: 10,
-        marginBottom: 12,
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <View style={{
-          width: `${progress}%`,
-          backgroundColor: getProgressColor(progress),
-          height: '100%',
-          borderRadius: 10,
-        }} />
-        <View style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}>
-          <Text style={{
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: 'white',
-            textShadowColor: 'rgba(0,0,0,0.3)',
-            textShadowOffset: { width: 1, height: 1 },
-            textShadowRadius: 2,
-          }}>
-            {Math.round(progress)}%
-          </Text>
+
+      {/* Stats Cards */}
+      <View style={styles.statsContainer}>
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#3498db' }]}>{consumed}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Consumed</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#e74c3c' }]}>{remaining}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Remaining</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#27ae60' }]}>{goal}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Daily Goal</Text>
         </View>
       </View>
-      
-      {/* Status and Remaining */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <Text style={{
-          color: theme?.textMuted || '#7f8c8d',
-          fontSize: 14
-        }}>
-          {remaining > 0 ? `${remaining}ml remaining` : 'Goal achieved!'}
+
+      {/* Motivational Message */}
+      <View style={[styles.messageContainer, { backgroundColor: progressColor + '20' }]}>
+        <Text style={[styles.messageText, { color: progressColor }]}>
+          {getMessage()}
         </Text>
-        
-        {progress >= 100 && (
-          <View style={{
-            backgroundColor: '#4CAF50',
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            borderRadius: 12
-          }}>
-            <Text style={{
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 'bold'
-            }}>
-              COMPLETE
-            </Text>
-          </View>
-        )}
+      </View>
+
+      {/* Progress Milestones */}
+      <View style={styles.milestonesContainer}>
+        <Text style={[styles.milestonesTitle, { color: theme?.text || '#2c3e50' }]}>
+          Progress Milestones
+        </Text>
+        <View style={styles.milestones}>
+          {[
+            { percent: 25, label: 'Good Start', achieved: percentage >= 25 },
+            { percent: 50, label: 'Halfway', achieved: percentage >= 50 },
+            { percent: 75, label: 'Almost There', achieved: percentage >= 75 },
+            { percent: 100, label: 'Goal!', achieved: percentage >= 100 },
+          ].map((milestone) => (
+            <View key={milestone.percent} style={styles.milestone}>
+              <View
+                style={[
+                  styles.milestoneCircle,
+                  {
+                    backgroundColor: milestone.achieved
+                      ? progressColor
+                      : theme?.textMuted || '#e0e0e0',
+                  },
+                ]}
+              >
+                <Text style={styles.milestonePercent}>
+                  {milestone.achieved ? '✓' : milestone.percent}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.milestoneLabel,
+                  {
+                    color: milestone.achieved ? theme?.text : theme?.textMuted,
+                    fontWeight: milestone.achieved ? '600' : '400',
+                  },
+                ]}
+              >
+                {milestone.label}
+              </Text>
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
 };
 
 // =======================================================
-// 2. ENHANCED SCROLLABLE BAR CHART COMPONENT
+// STYLESHEET (MERGED & UPDATED)
+// =======================================================
+const styles = StyleSheet.create({
+  // Card States
+  emptyCard: {
+    borderWidth: 2, 
+    borderColor: '#E0E0E0', 
+    borderStyle: 'dashed' 
+  },
+  
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    fontSize: 14,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(25, 118, 210, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12
+  },
+  badgeText: {
+    color: '#1976D2',
+    fontSize: 12,
+    marginLeft: 4
+  },
+
+  // Empty State
+  emptyState: { 
+    alignItems: 'center', 
+    paddingVertical: 20 
+  },
+  emptyTextBold: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    marginTop: 12, 
+    marginBottom: 4 
+  },
+  emptyTextMuted: { 
+    fontSize: 14, 
+    textAlign: 'center' 
+  },
+
+  // Circular Progress
+  circleContainer: {
+    marginVertical: 20,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerTextContainer: {
+    position: 'absolute',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  percentageText: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  consumedText: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  goalText: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+
+  // Stats Cards
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 24,
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    opacity: 0.7,
+  },
+
+  // Motivational Message
+  messageContainer: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  messageText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Milestones
+  milestonesContainer: {
+    width: '100%',
+    marginTop: 24,
+  },
+  milestonesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  milestones: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  milestone: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  milestoneCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  milestonePercent: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  milestoneLabel: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
+
+  // --- WeeklyChart & DrinkingStats styles (from original) ---
+  barChartContainer: { 
+    marginVertical: 16 
+  },
+  completeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  completeBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold'
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  footerText: {
+    fontSize: 14,
+  },
+});
+
+// =======================================================
+// 2. ENHANCED SCROLLABLE BAR CHART COMPONENT (UNCHANGED)
 // =======================================================
 export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
   const [chartType, setChartType] = useState('weekly');
@@ -273,7 +463,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
       hourlyData.slice(0, 6).reduce((a, b) => a + b, 0),    // 12AM-6AM
       hourlyData.slice(6, 12).reduce((a, b) => a + b, 0),   // 6AM-12PM
       hourlyData.slice(12, 18).reduce((a, b) => a + b, 0),  // 12PM-6PM
-      hourlyData.slice(18, 24).reduce((a, b) => a + b, 0)   // 6PM-12AM
+      hourlyData.slice(18, 24).reduce((a, b) => a + b, 0)  // 6PM-12AM
     ];
 
     return {
@@ -632,7 +822,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
 };
 
 // =======================================================
-// 3. DRINKING STATS COMPONENT
+// 3. DRINKING STATS COMPONENT (UNCHANGED)
 // =======================================================
 export const DrinkingStats = ({ dailyStats, sensorData, theme }) => {
   // Safe temperature display
@@ -772,7 +962,7 @@ export const DrinkingStats = ({ dailyStats, sensorData, theme }) => {
 };
 
 // =======================================================
-// 4. REAL DATA INTEGRATION HOOK
+// 4. REAL DATA INTEGRATION HOOK (UNCHANGED)
 // =======================================================
 export const useIntakeService = (user) => {
   const [dailyStats, setDailyStats] = useState({

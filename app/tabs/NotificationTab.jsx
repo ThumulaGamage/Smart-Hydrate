@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
-import { ref, onValue, update } from 'firebase/database';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
+  Switch,
+  Alert,
   ActivityIndicator,
-  Animated
+  RefreshControl,
 } from 'react-native';
+import { ref, onValue, update } from 'firebase/database';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../Theme/theme';
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
 import bleService from '../../services/BLEService';
-
-// Import auth from your existing Firebase config
-import { auth } from '../../config/firebaseConfig';
 
 // Graceful notification import
 let Notifications = null;
@@ -54,284 +51,19 @@ try {
 
 export default function NotificationTab() {
   const theme = useTheme();
-  const [notifications, setNotifications] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  
+  // State declarations
+  const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [sensorData, setSensorData] = useState({
     waterLevel: 0,
     temperature: 0,
     lastDrink: null,
     isConnected: false
   });
-
-  const cleanup = () => {
-    // Cleanup function: Add any necessary cleanup logic here if you set up listeners/subscriptions
-  };
-
-  useEffect(() => {
-    // ⚠️ FIX: Correctly call the initialization function and return cleanup
-    initializeNotifications();
-    // Note: We intentionally avoid setting up a new BLE listener here
-    return cleanup;
-  }, []);
-
-  const initializeNotifications = async () => {
-    setLoading(true);
-    try {
-      if (auth.currentUser) {
-        // Assuming WaterBottleService requires the user's UID to initialize
-        const service = new WaterBottleService(auth.currentUser.uid);
-        
-        // Get today's stats (total consumed, goal)
-        const todayStats = await service.getTodayStats();
-        
-        // Get latest sensor reading
-        const latestReading = await service.getLatestReading();
-        
-        let updatedSensorData = { ...sensorData };
-        
-        if (latestReading && latestReading.length > 0) {
-          const reading = latestReading[0];
-          updatedSensorData = {
-            waterLevel: reading.waterLevel || 0,
-            temperature: reading.temperature || 0,
-            // Ensure timestamp is converted to a Date object if it's a Firebase Timestamp
-            lastDrink: reading.timestamp?.toDate ? reading.timestamp.toDate() : null,
-            isConnected: bleService.isConnected || false // Use current BLE state
-          };
-          setSensorData(updatedSensorData);
-        }
-
-        // Generate notifications based on the latest data
-        generateNotifications(todayStats, updatedSensorData);
-      }
-    } catch (error) {
-      console.error('Failed to initialize notifications:', error);
-      // Optionally add an error notification here
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateNotifications = (todayStats, currentSensorData) => {
-    const newNotifications = [];
-    const now = Date.now();
-
-    // 1. Water Level Notifications
-    if (currentSensorData.waterLevel < 25) {
-      newNotifications.push({
-        id: 'low-water',
-        type: 'critical',
-        icon: 'water',
-        title: 'Bottle Running Low',
-        message: 'Your bottle is running low! Time for a refill.',
-        timestamp: new Date(),
-        priority: 'high',
-        actionable: true,
-        action: 'refill'
-      });
-    } else if (currentSensorData.waterLevel < 50) {
-      newNotifications.push({
-        id: 'half-water',
-        type: 'warning',
-        icon: 'water-outline',
-        title: 'Water Level Medium',
-        message: 'Your bottle is half empty. Consider refilling soon.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: false
-      });
-    }
-
-    // 2. Temperature Notifications
-    if (currentSensorData.temperature > 30) {
-      newNotifications.push({
-        id: 'warm-water',
-        type: 'warning',
-        icon: 'thermometer-outline',
-        title: 'Water Temperature High',
-        message: 'Water is quite warm. Consider adding ice for better taste.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: false
-      });
-    } else if (currentSensorData.temperature < 10) {
-      newNotifications.push({
-        id: 'cold-water',
-        type: 'info',
-        icon: 'snow-outline',
-        title: 'Refreshingly Cold',
-        message: 'Your water is nice and cold! Perfect for hydration.',
-        timestamp: new Date(),
-        priority: 'low',
-        actionable: false
-      });
-    }
-
-    // 3. Hydration Reminder (If last drink was over 1 hour ago (3,600,000 ms))
-    if (currentSensorData.lastDrink && (now - currentSensorData.lastDrink) > 3600000) {
-      newNotifications.push({
-        id: 'drink-reminder',
-        type: 'critical',
-        icon: 'time-outline',
-        title: 'Hydration Reminder',
-        message: "It's been over an hour since your last drink. Stay hydrated!",
-        timestamp: new Date(),
-        priority: 'high',
-        actionable: true,
-        action: 'drink'
-      });
-    }
-
-    // 4. Goal Progress Notifications
-    if (todayStats && todayStats.goal > 0) {
-      const progressPercent = (todayStats.totalConsumed / todayStats.goal) * 100;
-      
-      if (progressPercent >= 100) {
-        newNotifications.push({
-          id: 'goal-achieved',
-          type: 'success',
-          icon: 'checkmark-circle',
-          title: 'Goal Achieved! 🎉',
-          message: "Congratulations! You've reached your daily hydration goal!",
-          timestamp: new Date(),
-          priority: 'high',
-          actionable: false
-        });
-      } else if (progressPercent >= 75 && progressPercent < 100) {
-        newNotifications.push({
-          id: 'almost-there',
-          type: 'info',
-          icon: 'trending-up',
-          title: 'Almost There!',
-          message: `You're ${progressPercent.toFixed(0)}% towards your goal. Keep it up!`,
-          timestamp: new Date(),
-          priority: 'medium',
-          actionable: false
-        });
-      } else if (progressPercent < 25) {
-        newNotifications.push({
-          id: 'low-progress',
-          type: 'warning',
-          icon: 'alert-circle-outline',
-          title: 'Low Daily Progress',
-          message: 'You haven\'t consumed much water today. Remember to stay hydrated!',
-          timestamp: new Date(),
-          priority: 'medium',
-          actionable: true,
-          action: 'drink'
-        });
-      }
-    }
-
-    // 5. Connection Status
-    if (!bleService.isConnected) {
-      newNotifications.push({
-        id: 'disconnected',
-        type: 'warning',
-        icon: 'bluetooth-outline',
-        title: 'Bottle Disconnected',
-        message: 'Your smart bottle is not connected. Connect to track your hydration.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: true,
-        action: 'connect'
-      });
-    }
-
-    // Sort by priority (high first) and then by timestamp (newest first)
-    newNotifications.sort((a, b) => {
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      }
-      return b.timestamp.getTime() - a.timestamp.getTime(); // Ensure comparison uses milliseconds
-    });
-
-    setNotifications(newNotifications);
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await initializeNotifications();
-    setRefreshing(false);
-  };
-
-  const dismissNotification = (id) => {
-    setNotifications(prev => prev.filter(notif => notif.id !== id));
-  };
-
-  // --- Utility Styling Functions ---
-
-  const getNotificationStyle = (type) => {
-    switch (type) {
-      case 'critical':
-        return {
-          borderColor: theme.error || '#f44336',
-          backgroundColor: `${theme.error || '#f44336'}15` // 15 is 9.8% opacity
-        };
-      case 'warning':
-        return {
-          borderColor: theme.warning || '#FF9800',
-          backgroundColor: `${theme.warning || '#FF9800'}15`
-        };
-      case 'success':
-        return {
-          borderColor: theme.success || '#4CAF50',
-          backgroundColor: `${theme.success || '#4CAF50'}15`
-        };
-      case 'info':
-      default:
-        return {
-          borderColor: theme.primary || '#2196F3',
-          backgroundColor: `${theme.primary || '#2196F3'}15`
-        };
-    }
-  };
-
-  const getIconColor = (type) => {
-    switch (type) {
-      case 'critical':
-        return theme.error || '#f44336';
-      case 'warning':
-        return theme.warning || '#FF9800';
-      case 'success':
-        return theme.success || '#4CAF50';
-      case 'info':
-      default:
-        return theme.primary || '#2196F3';
-    }
-  };
-
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'Time unknown';
-    const now = new Date();
-    const diff = now - timestamp;
-    
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return timestamp.toLocaleDateString();
-  };
-  
-  // --- Render Logic ---
-
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary || '#2196F3'} />
-          <Text style={[styles.loadingText, { color: theme.textMuted }]}>
-            Loading notifications...
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  const [userId, setUserId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notificationPermission, setNotificationPermission] = useState(false);
 
   // Healthy hydration settings
   const [healthyEnabled, setHealthyEnabled] = useState(true);
@@ -446,12 +178,184 @@ export default function NotificationTab() {
     };
   }, [userId]);
 
+  // Initialize notifications and sensor data
+  useEffect(() => {
+    if (userId) {
+      initializeNotifications();
+    }
+  }, [userId]);
+
+  const initializeNotifications = async () => {
+    try {
+      if (auth.currentUser) {
+        const service = new WaterBottleService(auth.currentUser.uid);
+        
+        const todayStats = await service.getTodayStats();
+        const latestReading = await service.getLatestReading();
+        
+        let updatedSensorData = { ...sensorData };
+        
+        if (latestReading && latestReading.length > 0) {
+          const reading = latestReading[0];
+          updatedSensorData = {
+            waterLevel: reading.waterLevel || 0,
+            temperature: reading.temperature || 0,
+            lastDrink: reading.timestamp?.toDate ? reading.timestamp.toDate() : null,
+            isConnected: bleService.isConnected || false
+          };
+          setSensorData(updatedSensorData);
+        }
+
+        generateNotifications(todayStats, updatedSensorData);
+      }
+    } catch (error) {
+      console.error('Failed to initialize notifications:', error);
+    }
+  };
+
+  const generateNotifications = (todayStats, currentSensorData) => {
+    const newNotifications = [];
+    const now = Date.now();
+
+    // Water Level Notifications
+    if (currentSensorData.waterLevel < 25) {
+      newNotifications.push({
+        id: 'low-water',
+        type: 'critical',
+        icon: 'water',
+        title: 'Bottle Running Low',
+        message: 'Your bottle is running low! Time for a refill.',
+        timestamp: new Date(),
+        priority: 'high',
+        actionable: true,
+        action: 'refill'
+      });
+    } else if (currentSensorData.waterLevel < 50) {
+      newNotifications.push({
+        id: 'half-water',
+        type: 'warning',
+        icon: 'water-outline',
+        title: 'Water Level Medium',
+        message: 'Your bottle is half empty. Consider refilling soon.',
+        timestamp: new Date(),
+        priority: 'medium',
+        actionable: false
+      });
+    }
+
+    // Temperature Notifications
+    if (currentSensorData.temperature > 30) {
+      newNotifications.push({
+        id: 'warm-water',
+        type: 'warning',
+        icon: 'thermometer-outline',
+        title: 'Water Temperature High',
+        message: 'Water is quite warm. Consider adding ice for better taste.',
+        timestamp: new Date(),
+        priority: 'medium',
+        actionable: false
+      });
+    } else if (currentSensorData.temperature < 10) {
+      newNotifications.push({
+        id: 'cold-water',
+        type: 'info',
+        icon: 'snow-outline',
+        title: 'Refreshingly Cold',
+        message: 'Your water is nice and cold! Perfect for hydration.',
+        timestamp: new Date(),
+        priority: 'low',
+        actionable: false
+      });
+    }
+
+    // Hydration Reminder
+    if (currentSensorData.lastDrink && (now - currentSensorData.lastDrink) > 3600000) {
+      newNotifications.push({
+        id: 'drink-reminder',
+        type: 'critical',
+        icon: 'time-outline',
+        title: 'Hydration Reminder',
+        message: "It's been over an hour since your last drink. Stay hydrated!",
+        timestamp: new Date(),
+        priority: 'high',
+        actionable: true,
+        action: 'drink'
+      });
+    }
+
+    // Goal Progress Notifications
+    if (todayStats && todayStats.goal > 0) {
+      const progressPercent = (todayStats.totalConsumed / todayStats.goal) * 100;
+      
+      if (progressPercent >= 100) {
+        newNotifications.push({
+          id: 'goal-achieved',
+          type: 'success',
+          icon: 'checkmark-circle',
+          title: 'Goal Achieved! 🎉',
+          message: "Congratulations! You've reached your daily hydration goal!",
+          timestamp: new Date(),
+          priority: 'high',
+          actionable: false
+        });
+      } else if (progressPercent >= 75 && progressPercent < 100) {
+        newNotifications.push({
+          id: 'almost-there',
+          type: 'info',
+          icon: 'trending-up',
+          title: 'Almost There!',
+          message: `You're ${progressPercent.toFixed(0)}% towards your goal. Keep it up!`,
+          timestamp: new Date(),
+          priority: 'medium',
+          actionable: false
+        });
+      } else if (progressPercent < 25) {
+        newNotifications.push({
+          id: 'low-progress',
+          type: 'warning',
+          icon: 'alert-circle-outline',
+          title: 'Low Daily Progress',
+          message: 'You haven\'t consumed much water today. Remember to stay hydrated!',
+          timestamp: new Date(),
+          priority: 'medium',
+          actionable: true,
+          action: 'drink'
+        });
+      }
+    }
+
+    // Connection Status
+    if (!bleService.isConnected) {
+      newNotifications.push({
+        id: 'disconnected',
+        type: 'warning',
+        icon: 'bluetooth-outline',
+        title: 'Bottle Disconnected',
+        message: 'Your smart bottle is not connected. Connect to track your hydration.',
+        timestamp: new Date(),
+        priority: 'medium',
+        actionable: true,
+        action: 'connect'
+      });
+    }
+
+    // Sort by priority and timestamp
+    newNotifications.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return b.timestamp.getTime() - a.timestamp.getTime();
+    });
+
+    setNotifications(newNotifications);
+  };
+
   // Countdown timers
   useEffect(() => {
     if (!allNotificationsEnabled) return;
 
     const interval = setInterval(() => {
-      // Update healthy countdown
       if (healthyEnabled && healthyNextReminder) {
         const countdown = calculateCountdown(healthyNextReminder);
         setHealthyCountdown(countdown);
@@ -459,7 +363,6 @@ export default function NotificationTab() {
         setHealthyCountdown('');
       }
 
-      // Update disease countdown
       if (diseaseEnabled && diseaseNextReminder) {
         const countdown = calculateCountdown(diseaseNextReminder);
         setDiseaseCountdown(countdown);
@@ -484,19 +387,16 @@ export default function NotificationTab() {
     return `${hours}h ${minutes}m ${seconds}s`;
   };
 
-  // Calculate intake per reminder
   const calculateIntake = (goal, gap) => {
     if (!goal || !gap || goal <= 0 || gap <= 0) return 0;
     const numberOfReminders = Math.floor(WAKING_HOURS / gap);
     return Math.ceil((goal / numberOfReminders) / 10) * 10;
   };
 
-  // Schedule healthy hydration notifications
   const scheduleHealthyNotifications = async (gapHours, intakeAmount) => {
     if (!notificationsAvailable || !healthyEnabled || !allNotificationsEnabled) return false;
 
     try {
-      // Cancel existing healthy notifications
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       for (const notification of allScheduled) {
         if (notification.content.data?.type === 'hydration_reminder') {
@@ -543,12 +443,10 @@ export default function NotificationTab() {
     }
   };
 
-  // Schedule disease hydration notifications
   const scheduleDiseaseNotifications = async (gapHours, intakeAmount, conditionName) => {
     if (!notificationsAvailable || !diseaseEnabled || !allNotificationsEnabled) return false;
 
     try {
-      // Cancel existing disease notifications
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       for (const notification of allScheduled) {
         if (notification.content.data?.type === 'disease_hydration_reminder') {
@@ -596,18 +494,15 @@ export default function NotificationTab() {
     }
   };
 
-  // Handle master toggle
   const handleMasterToggle = async (value) => {
     setAllNotificationsEnabled(value);
 
     if (!value) {
-      // Turn off all notifications
       if (notificationsAvailable) {
         await Notifications.cancelAllScheduledNotificationsAsync();
         console.log('🔕 All notifications cancelled');
       }
 
-      // Update Firebase
       if (userId) {
         await update(ref(database, `users/${userId}/profile`), {
           notificationsEnabled: false,
@@ -631,7 +526,6 @@ export default function NotificationTab() {
     }
   };
 
-  // Handle healthy toggle
   const handleHealthyToggle = async (value) => {
     setHealthyEnabled(value);
 
@@ -641,7 +535,6 @@ export default function NotificationTab() {
       });
 
       if (!value && notificationsAvailable) {
-        // Cancel healthy notifications
         const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
         for (const notification of allScheduled) {
           if (notification.content.data?.type === 'hydration_reminder') {
@@ -650,14 +543,12 @@ export default function NotificationTab() {
         }
         setHealthyNextReminder(null);
       } else if (value && healthyGoal > 0) {
-        // Reschedule
         const intake = calculateIntake(healthyGoal, healthyGap);
         await scheduleHealthyNotifications(healthyGap, intake);
       }
     }
   };
 
-  // Handle disease toggle
   const handleDiseaseToggle = async (value) => {
     setDiseaseEnabled(value);
 
@@ -667,7 +558,6 @@ export default function NotificationTab() {
       });
 
       if (!value && notificationsAvailable) {
-        // Cancel disease notifications
         const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
         for (const notification of allScheduled) {
           if (notification.content.data?.type === 'disease_hydration_reminder') {
@@ -676,14 +566,12 @@ export default function NotificationTab() {
         }
         setDiseaseNextReminder(null);
       } else if (value && diseaseGoal > 0 && diseaseName) {
-        // Reschedule
         const intake = calculateIntake(diseaseGoal, diseaseGap);
         await scheduleDiseaseNotifications(diseaseGap, intake, diseaseName);
       }
     }
   };
 
-  // Reschedule all notifications
   const handleRescheduleAll = async () => {
     if (!notificationsAvailable || !allNotificationsEnabled) {
       Alert.alert("Notifications Disabled", "Please enable notifications first.");
@@ -697,14 +585,12 @@ export default function NotificationTab() {
 
     let scheduled = 0;
 
-    // Reschedule healthy
     if (healthyEnabled && healthyGoal > 0) {
       const intake = calculateIntake(healthyGoal, healthyGap);
       const success = await scheduleHealthyNotifications(healthyGap, intake);
       if (success) scheduled++;
     }
 
-    // Reschedule disease
     if (diseaseEnabled && diseaseGoal > 0 && diseaseName) {
       const intake = calculateIntake(diseaseGoal, diseaseGap);
       const success = await scheduleDiseaseNotifications(diseaseGap, intake, diseaseName);
@@ -726,11 +612,76 @@ export default function NotificationTab() {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await initializeNotifications();
+    setRefreshing(false);
+  };
+
+  const dismissNotification = (id) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  };
+
+  const getNotificationStyle = (type) => {
+    switch (type) {
+      case 'critical':
+        return {
+          borderColor: theme.error || '#f44336',
+          backgroundColor: `${theme.error || '#f44336'}15`
+        };
+      case 'warning':
+        return {
+          borderColor: theme.warning || '#FF9800',
+          backgroundColor: `${theme.warning || '#FF9800'}15`
+        };
+      case 'success':
+        return {
+          borderColor: theme.success || '#4CAF50',
+          backgroundColor: `${theme.success || '#4CAF50'}15`
+        };
+      case 'info':
+      default:
+        return {
+          borderColor: theme.primary || '#2196F3',
+          backgroundColor: `${theme.primary || '#2196F3'}15`
+        };
+    }
+  };
+
+  const getIconColor = (type) => {
+    switch (type) {
+      case 'critical':
+        return theme.error || '#f44336';
+      case 'warning':
+        return theme.warning || '#FF9800';
+      case 'success':
+        return theme.success || '#4CAF50';
+      case 'info':
+      default:
+        return theme.primary || '#2196F3';
+    }
+  };
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'Time unknown';
+    const now = new Date();
+    const diff = now - timestamp;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return timestamp.toLocaleDateString();
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.accent || '#0D9488'} />
-        <Text style={[styles.loadingText, { color: theme.text }]}>Loading notifications...</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary || '#2196F3'} />
+          <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+            Loading notifications...
+          </Text>
+        </View>
       </View>
     );
   }
@@ -739,13 +690,25 @@ export default function NotificationTab() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Ionicons name="lock-closed" size={64} color={theme.text} style={{ opacity: 0.3 }} />
-        <Text style={[styles.text, { color: theme.text, marginTop: 16 }]}>Please sign in to manage notifications</Text>
+        <Text style={[styles.text, { color: theme.text, marginTop: 16 }]}>
+          Please sign in to manage notifications
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={[styles.scrollContainer, { backgroundColor: theme.background }]}>
+    <ScrollView 
+      style={[styles.scrollContainer, { backgroundColor: theme.background }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={theme.primary}
+          colors={[theme.primary || '#2196F3']}
+        />
+      }
+    >
       <View style={styles.contentContainer}>
 
         {/* Header */}
@@ -924,6 +887,87 @@ export default function NotificationTab() {
           </View>
         </View>
 
+        {/* Real-time Notifications from Sensor Data */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            📬 Smart Alerts
+          </Text>
+          
+          {notifications.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons 
+                name="checkmark-circle-outline" 
+                size={64} 
+                color={theme.success || '#4CAF50'} 
+              />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                All Caught Up!
+              </Text>
+              <Text style={[styles.emptyMessage, { color: theme.textMuted }]}>
+                No alerts at the moment. Keep up the great hydration! 💧
+              </Text>
+            </View>
+          ) : (
+            notifications.map((notification) => (
+              <View
+                key={notification.id}
+                style={[
+                  styles.notificationCard,
+                  getNotificationStyle(notification.type),
+                  { backgroundColor: theme.card || 'white' }
+                ]}
+              >
+                <View style={styles.notificationContent}>
+                  <View style={styles.iconContainer}>
+                    <Ionicons
+                      name={notification.icon}
+                      size={24}
+                      color={getIconColor(notification.type)}
+                    />
+                  </View>
+                  
+                  <View style={styles.textContainer}>
+                    <Text style={[styles.notificationTitle, { color: theme.text }]}>
+                      {notification.title}
+                    </Text>
+                    <Text style={[styles.notificationMessage, { color: theme.textMuted }]}>
+                      {notification.message}
+                    </Text>
+                    <Text style={[styles.timestamp, { color: theme.textMuted }]}>
+                      {formatTimestamp(notification.timestamp)}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.dismissButton}
+                    onPress={() => dismissNotification(notification.id)}
+                  >
+                    <Ionicons name="close" size={20} color={theme.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                {notification.actionable && (
+                  <View style={styles.notificationActionContainer}>
+                    <TouchableOpacity
+                      style={[styles.notificationActionButton, { borderColor: getIconColor(notification.type) }]}
+                      onPress={() => {
+                        console.log(`Action taken: ${notification.action} for ${notification.id}`);
+                        dismissNotification(notification.id);
+                      }}
+                    >
+                      <Text style={[styles.actionText, { color: getIconColor(notification.type) }]}>
+                        {notification.action === 'refill' ? 'Mark as Refilled' : 
+                         notification.action === 'drink' ? 'Remind Me Later' : 
+                         notification.action === 'connect' ? 'Go to Settings' : 'Got it'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))
+          )}
+        </View>
+
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
           <TouchableOpacity
@@ -974,118 +1018,8 @@ export default function NotificationTab() {
 
       </View>
     </ScrollView>
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.card || 'white' }]}>
-        <View style={styles.headerContent}>
-          <Ionicons name="notifications" size={28} color={theme.primary || '#2196F3'} />
-          <Text style={[styles.headerTitle, { color: theme.text }]}>
-            Notifications
-          </Text>
-        </View>
-        {notifications.length > 0 && (
-          <View style={[styles.badge, { backgroundColor: theme.error || '#f44336' }]}>
-            <Text style={styles.badgeText}>{notifications.length}</Text>
-          </View>
-        )}
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-            colors={[theme.primary || '#2196F3']}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {notifications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons 
-              name="checkmark-circle-outline" 
-              size={80} 
-              color={theme.success || '#4CAF50'} 
-            />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>
-              All Caught Up!
-            </Text>
-            <Text style={[styles.emptyMessage, { color: theme.textMuted }]}>
-              You don't have any notifications right now.
-            </Text>
-            <Text style={[styles.emptySubtext, { color: theme.textMuted }]}>
-              Keep up the great hydration habits! 💧
-            </Text>
-          </View>
-        ) : (
-          notifications.map((notification) => (
-            <Animated.View
-              key={notification.id}
-              style={[
-                styles.notificationCard,
-                getNotificationStyle(notification.type),
-                { backgroundColor: theme.card || 'white' }
-              ]}
-            >
-              <View style={styles.notificationContent}>
-                <View style={styles.iconContainer}>
-                  <Ionicons
-                    name={notification.icon}
-                    size={24}
-                    color={getIconColor(notification.type)}
-                  />
-                </View>
-                
-                <View style={styles.textContainer}>
-                  <Text style={[styles.notificationTitle, { color: theme.text }]}>
-                    {notification.title}
-                  </Text>
-                  <Text style={[styles.notificationMessage, { color: theme.textMuted }]}>
-                    {notification.message}
-                  </Text>
-                  <Text style={[styles.timestamp, { color: theme.textMuted }]}>
-                    {formatTimestamp(notification.timestamp)}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.dismissButton}
-                  onPress={() => dismissNotification(notification.id)}
-                >
-                  <Ionicons name="close" size={20} color={theme.textMuted} />
-                </TouchableOpacity>
-              </View>
-
-              {notification.actionable && (
-                <View style={styles.actionContainer}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { borderColor: getIconColor(notification.type) }]}
-                    onPress={() => {
-                      // Placeholder for action handling (e.g., navigating to refill screen, or marking goal as met)
-                      console.log(`Action taken: ${notification.action} for ${notification.id}`);
-                      dismissNotification(notification.id); // Dismiss after action
-                    }}
-                  >
-                    <Text style={[styles.actionText, { color: getIconColor(notification.type) }]}>
-                      {notification.action === 'refill' ? 'Mark as Refilled' : 
-                       notification.action === 'drink' ? 'Remind Me Later' : 
-                       notification.action === 'connect' ? 'Go to Settings' : 'Got it'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </Animated.View>
-          ))
-        )}
-      </ScrollView>
-    </View>
   );
 }
-
-// --- Stylesheet ---
 
 const styles = StyleSheet.create({
   container: {
@@ -1117,6 +1051,11 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loadingText: {
     marginTop: 16,
@@ -1168,36 +1107,13 @@ const styles = StyleSheet.create({
     borderColor: '#0D9488',
   },
   toggleHeader: {
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   toggleInfo: {
     flex: 1,
+    marginLeft: 12,
   },
   toggleTitle: {
     fontSize: 18,
@@ -1310,53 +1226,24 @@ const styles = StyleSheet.create({
   helpText: {
     fontSize: 13,
     lineHeight: 20,
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  badge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
   },
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
   },
   emptyTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginTop: 20,
+    marginTop: 16,
     marginBottom: 8,
   },
   emptyMessage: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  emptySubtext: {
     fontSize: 14,
     textAlign: 'center',
-    marginTop: 8,
   },
   notificationCard: {
-    borderRadius: 16,
+    borderRadius: 12,
     marginBottom: 12,
     borderLeftWidth: 4,
     shadowColor: '#000',
@@ -1395,12 +1282,12 @@ const styles = StyleSheet.create({
   dismissButton: {
     padding: 4,
   },
-  actionContainer: {
+  notificationActionContainer: {
     paddingHorizontal: 16,
     paddingBottom: 16,
     paddingTop: 0,
   },
-  actionButton: {
+  notificationActionButton: {
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
