@@ -36,7 +36,7 @@ export default function SettingsTab() {
         {
           title: "Notifications",
           icon: <Ionicons name="notifications" size={22} color={theme.icon || theme.text} />,
-          action: () => router.push('/account/notifications')
+          action: () => router.push('/tabs/NotificationTab')  
         },
         {
           title: "Appearance",

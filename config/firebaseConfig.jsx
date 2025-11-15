@@ -1,10 +1,11 @@
-// FirebaseConfig.jsx - Updated with better new user handling
+// FirebaseConfig.jsx - Updated with Async Storage Persistence
 
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/database';
 import 'firebase/compat/firestore';
 import 'firebase/compat/storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -23,12 +24,16 @@ if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 
-// Export Firebase services and FieldValue
+// Export Firebase services
 export const auth = firebase.auth();
 export const realtimeDB = firebase.database();
 export const firestore = firebase.firestore();
 export const storage = firebase.storage();
+
 export const FieldValue = firebase.firestore.FieldValue;
+
+
+
 export default firebase;
 
 // =======================================================

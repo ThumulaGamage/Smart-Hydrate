@@ -106,18 +106,7 @@ export default function SignIn() {
 
   const closeModal = () => setModalVisible(false);
 
-  // Optional: Handle hardware back button or ESC key for modal (web/desktop)
-  // useEffect(() => {
-  //   const backAction = () => {
-  //     if (modalVisible) {
-  //       closeModal();
-  //       return true;
-  //     }
-  //     return false;
-  //   };
-  //   const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-  //   return () => backHandler.remove();
-  // }, [modalVisible]);
+ 
 
   return (
     <ThemedView style={styles.container}>
