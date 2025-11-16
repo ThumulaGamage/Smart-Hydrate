@@ -1,4 +1,4 @@
-// EnhancedHomepage.jsx - Fixed WaterBottleService initialization (CLEANED VERSION)
+// EnhancedHomepage.jsx - With UserTab-style header
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -10,10 +10,12 @@ import {
   Animated,
   RefreshControl,
   Dimensions,
-  Platform
+  Modal,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import bleService from '../../services/BLEService';
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
 import { useUser } from '../../context/UserDetailContext';
@@ -29,7 +31,6 @@ const { width } = Dimensions.get('window');
 // Create a ref to hold the current service instance
 const waterBottleServiceRef = React.createRef();
 
-// ADDED: bottleCapacity prop to WaterBottleVisual
 const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel, theme, bottleCapacity }) => {
   const [animatedValue] = useState(new Animated.Value(0));
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -62,8 +63,6 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
   };
 
   const getBottleOpacity = () => isConnected ? 1 : 0.3;
-
-  // Calculate remaining volume
   const remainingVolume = (waterLevel / 100) * bottleCapacity;
 
   return (
@@ -110,7 +109,6 @@ const WaterBottleVisual = ({ waterLevel, isConnected, temperature, batteryLevel,
         <Text style={[styles.waterPercentage, { color: getWaterColor(waterLevel) }]}>
           {waterLevel.toFixed(1)}%
         </Text>
-        {/* ADDED: Remaining water volume */}
         <Text style={[styles.waterLevelVolume, { color: theme?.text || '#2c3e50', fontSize: 18, fontWeight: '600', marginTop: 4 }]}>
           {remainingVolume.toFixed(0)} ml left
         </Text>
@@ -203,7 +201,7 @@ const SmartRecommendations = ({ waterLevel, temperature, lastDrink, theme }) => 
 };
 
 export default function EnhancedHomepage() {
-  const { user } = useUser();
+  const { user, userDetails, logout } = useUser();
   const theme = useTheme();
   const router = useRouter();
 
@@ -232,41 +230,40 @@ export default function EnhancedHomepage() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [waterBottleService, setWaterBottleService] = useState(null);
-  const [showChart, setShowChart] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [fadeAnim] = useState(new Animated.Value(0));
 
-  // New states for drink detection and animation
   const [lastDrinkVolume, setLastDrinkVolume] = useState(0);
   const [showDrinkAnimation, setShowDrinkAnimation] = useState(false);
   const animationTimeoutRef = useRef(null);
 
-  // Store unsubscribe functions for cleanup
   const unsubscribersRef = useRef([]);
-
-  // Data debugger state
   const [showDebugger, setShowDebugger] = useState(false);
 
-  // Use the intake service hook
   const { dailyStats, weeklyData, sensorData: intakeSensorData } = useIntakeService(user);
 
   useEffect(() => {
     initializeServices();
+    
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+    
     return cleanup;
   }, []);
 
-  // Update ref when service changes
   useEffect(() => {
     waterBottleServiceRef.current = waterBottleService;
   }, [waterBottleService]);
 
-  // Enhanced function to update hydration progress with animation
   const updateHydrationProgress = useCallback(async (volumeConsumed) => {
     console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml`);
 
-    // Show drink animation immediately
     setLastDrinkVolume(Math.round(volumeConsumed));
     setShowDrinkAnimation(true);
 
-    // Clear animation after 3 seconds
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
     }
@@ -276,7 +273,6 @@ export default function EnhancedHomepage() {
       setLastDrinkVolume(0);
     }, 3000);
 
-    // Try to save to database using the current service reference
     const currentService = waterBottleServiceRef.current;
 
     if (currentService) {
@@ -285,7 +281,6 @@ export default function EnhancedHomepage() {
         await currentService.saveDrinkingEvent(volumeConsumed);
         console.log('✅ Drinking event saved successfully to database');
 
-        // Refresh Firebase data to reflect the update
         try {
           const updatedStats = await currentService.getTodayStats();
           setFirebaseData(prev => ({
@@ -315,18 +310,11 @@ export default function EnhancedHomepage() {
 
       if (auth.currentUser) {
         console.log('🔧 Initializing WaterBottleService...');
-
-        // Initialize the service immediately
         const service = new WaterBottleService(auth.currentUser.uid);
-
-        // Set both state and ref
         setWaterBottleService(service);
         waterBottleServiceRef.current = service;
-
-        // Load initial data
         await loadFirebaseData(service);
         setupFirebaseListeners(service);
-
         console.log('✅ WaterBottleService initialized and ready');
       } else {
         console.warn('⚠️ No authenticated user found');
@@ -350,18 +338,16 @@ export default function EnhancedHomepage() {
           let newWaterLevel = data.waterLevel;
           const currentTimestamp = new Date();
 
-          // Validate and sanitize water level
           if (newWaterLevel === undefined || newWaterLevel === null) {
             console.warn('⚠️ Invalid water level data received');
             return;
           }
-          newWaterLevel = Math.max(0, Math.min(100, newWaterLevel)); // Clamp between 0-100
+          newWaterLevel = Math.max(0, Math.min(100, newWaterLevel));
 
-          // Enhanced drink detection with improved thresholds
           if (lastReportedWaterLevel.current !== null) {
             const levelDifference = lastReportedWaterLevel.current - newWaterLevel;
-            const minThreshold = 1.5; // Minimum 1.5% change to detect drink
-            const maxThreshold = 40; // Maximum 40% change to avoid false positives
+            const minThreshold = 1.5;
+            const maxThreshold = 40;
 
             console.log('[Water Change Detection]', {
               previous: lastReportedWaterLevel.current?.toFixed(1),
@@ -371,14 +357,11 @@ export default function EnhancedHomepage() {
               bottleCapacity: getBottleCapacity()
             });
 
-            // Detect consumption (water level decreased)
             if (levelDifference > minThreshold && levelDifference <= maxThreshold) {
               const bottleCapacity = getBottleCapacity();
               const volumeConsumed = (levelDifference / 100) * bottleCapacity;
 
               console.log(`💧 Drink detected: ${volumeConsumed.toFixed(0)}ml (${levelDifference.toFixed(1)}% decrease)`);
-
-              // Update hydration progress with animation
               await updateHydrationProgress(volumeConsumed);
 
             } else if (levelDifference < -minThreshold) {
@@ -388,7 +371,6 @@ export default function EnhancedHomepage() {
             }
           }
 
-          // Update sensor data
           setSensorData(prev => ({
             ...prev,
             waterLevel: newWaterLevel,
@@ -398,7 +380,6 @@ export default function EnhancedHomepage() {
             lastUpdate: currentTimestamp
           }));
 
-          // Update last reported level
           lastReportedWaterLevel.current = newWaterLevel;
         },
         onError: (message) => {
@@ -431,7 +412,7 @@ export default function EnhancedHomepage() {
       });
 
       if (latestReading && latestReading.length > 0) {
-        const reading = latestReading[0]; // Firebase returns array
+        const reading = latestReading[0];
         setSensorData(prev => ({
           ...prev,
           waterLevel: reading.waterLevel || prev.waterLevel,
@@ -450,12 +431,10 @@ export default function EnhancedHomepage() {
 
   const setupFirebaseListeners = (service) => {
     try {
-      // Clear any existing listeners
       cleanupListeners();
 
       console.log('🔄 Setting up Firebase listeners...');
 
-      // Enhanced listener for today's stats with better error handling
       const todayStatsUnsubscribe = service.onTodayStats((stats) => {
         console.log('🔄 Firebase onTodayStats listener triggered:', stats);
         setFirebaseData(prev => ({
@@ -470,7 +449,6 @@ export default function EnhancedHomepage() {
           console.log('🔄 Latest reading updated:', latest);
           setFirebaseData(prev => ({ ...prev, latestReading: latest }));
 
-          // Handle Firestore timestamp conversion
           const timestamp = latest.timestamp?.toDate ? latest.timestamp.toDate() : new Date(latest.timestamp);
 
           setSensorData(prev => ({
@@ -492,12 +470,11 @@ export default function EnhancedHomepage() {
         }));
       });
 
-      // Store unsubscribe functions
       unsubscribersRef.current = [
         todayStatsUnsubscribe,
         readingsUnsubscribe,
         profileUnsubscribe
-      ].filter(Boolean); // Remove any undefined functions
+      ].filter(Boolean);
 
       console.log(`✅ Set up ${unsubscribersRef.current.length} Firebase listeners`);
 
@@ -524,16 +501,10 @@ export default function EnhancedHomepage() {
 
   const cleanup = () => {
     console.log('🧹 Starting cleanup...');
-
-    // Cleanup Firebase listeners
     cleanupListeners();
-
-    // Cleanup BLE
     if (bleService?.isConnected) {
       bleService.disconnect().catch(e => console.log('BLE cleanup error:', e));
     }
-
-    // Cleanup animations
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
       animationTimeoutRef.current = null;
@@ -586,7 +557,6 @@ export default function EnhancedHomepage() {
         Alert.alert('Not Connected', 'Please connect first');
         return;
       }
-
       await bleService.sendCommand(command);
     } catch (error) {
       console.error('❌ Command error:', error);
@@ -594,16 +564,25 @@ export default function EnhancedHomepage() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace('/auth/signIn');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
+
   const getBottleCapacity = () => {
-    // First check profile, then fallback to default
     const profileCapacity = firebaseData.profile?.bottleCapacity;
     if (profileCapacity && profileCapacity > 0) {
       return profileCapacity;
     }
-    return 1000; // Default bottle capacity
+    return 1000;
   };
 
   const getUserDisplayName = () => {
+    if (userDetails?.name) return userDetails.name;
     if (user?.name) return user.name;
     if (user?.displayName) return user.displayName;
     if (auth.currentUser?.displayName) return auth.currentUser.displayName;
@@ -619,6 +598,15 @@ export default function EnhancedHomepage() {
     return 'User';
   };
 
+  const getInitials = () => {
+    const name = getUserDisplayName();
+    if (name && name !== 'User' && !name.includes('@')) {
+      return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    }
+    const email = auth.currentUser?.email || user?.email;
+    return email ? email.substring(0, 2).toUpperCase() : '?';
+  };
+
   const getTodayGoal = () => {
     if (firebaseData.profile?.dailyGoal !== undefined && firebaseData.profile?.dailyGoal !== null) {
       return firebaseData.profile.dailyGoal;
@@ -626,7 +614,7 @@ export default function EnhancedHomepage() {
     if (firebaseData.todayStats?.goal !== undefined && firebaseData.todayStats?.goal !== null) {
       return firebaseData.todayStats.goal;
     }
-    return 2000; // default
+    return 2000;
   };
 
   const getTodayIntake = () => {
@@ -639,20 +627,9 @@ export default function EnhancedHomepage() {
     return intake >= goal;
   };
 
-  const getDisplayStats = () => {
-    return firebaseData.todayStats || {
-      totalConsumed: 0,
-      drinkingFrequency: 0,
-      averageTemperature: 22.5,
-      goalAchieved: false
-    };
-  };
-
-  // Get actual daily stats from Firebase or fallback to sample data
   const actualDailyStats = firebaseData.todayStats || dailyStats;
   const actualWeeklyData = firebaseData.weeklyData.length > 0 ? firebaseData.weeklyData : weeklyData;
-
-  const bottleCapacity = getBottleCapacity(); // Get capacity here once
+  const bottleCapacity = getBottleCapacity();
 
   return (
     <View style={[styles.container, { backgroundColor: theme?.background || '#f5f7fa' }]}>
@@ -668,16 +645,113 @@ export default function EnhancedHomepage() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: theme?.primary || '#667eea' }]}>
-          <View style={styles.headerContent}>
-            <View>
-              <Text style={styles.greeting}>Hello, {getUserDisplayName()}! 👋</Text>
-              <Text style={styles.subtitle}>Stay hydrated & healthy today</Text>
-            </View>
-            {/* REMOVED: Right top corner button (Data Debugger) */}
+        {/* Enhanced Header with Profile - UserTab Style */}
+        <LinearGradient
+          colors={[theme?.primary || '#667eea', (theme?.primary || '#667eea') + 'DD']}
+          style={{
+            paddingTop: 20,
+            paddingBottom: 30,
+            paddingHorizontal: 20,
+          }}
+        >
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8,
+          }}>
+            <Text style={{
+              fontSize: 24,
+              color: 'white',
+              fontWeight: 'bold',
+            }}>
+              Hello, {getUserDisplayName()}! 👋
+            </Text>
+            <TouchableOpacity 
+              style={{ padding: 8 }}
+              onPress={() => setShowLogoutModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={24} color="white" />
+            </TouchableOpacity>
           </View>
-        </View>
+
+          <Text style={{
+            fontSize: 14,
+            color: 'rgba(255,255,255,0.9)',
+            marginBottom: 20,
+          }}>
+            Stay hydrated & healthy today
+          </Text>
+
+          <Animated.View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            opacity: fadeAnim,
+          }}>
+            <View style={{ position: 'relative', marginRight: 16 }}>
+              {userDetails?.profilePicture ? (
+                <Image 
+                  source={{ uri: userDetails.profilePicture }} 
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 36,
+                    borderWidth: 3,
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}
+                />
+              ) : (
+                <View style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 36,
+                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderWidth: 3,
+                  borderColor: 'rgba(255,255,255,0.3)',
+                }}>
+                  <Text style={{
+                    fontSize: 26,
+                    fontWeight: 'bold',
+                    color: theme?.primary || '#667eea',
+                  }}>
+                    {getInitials()}
+                  </Text>
+                </View>
+              )}
+              <View style={{
+                position: 'absolute',
+                bottom: 2,
+                right: 2,
+                width: 14,
+                height: 14,
+                borderRadius: 7,
+                backgroundColor: '#27ae60',
+                borderWidth: 2,
+                borderColor: 'white',
+              }} />
+            </View>
+            
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.8)',
+                marginBottom: 4,
+              }}>
+                {user?.email || auth.currentUser?.email}
+              </Text>
+              <Text style={{
+                fontSize: 14,
+                color: 'rgba(255,255,255,0.9)',
+                fontWeight: '500',
+              }}>
+                Keep up the great work!
+              </Text>
+            </View>
+          </Animated.View>
+        </LinearGradient>
 
         {/* Connection Section */}
         <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
@@ -760,13 +834,13 @@ export default function EnhancedHomepage() {
           </Text>
         </View>
 
-        {/* Hydration Goal Card - Using the restored component */}
+        {/* Hydration Goal Card */}
         <HydrationGoalCard
           dailyStats={actualDailyStats}
           theme={theme}
         />
 
-        {/* Drinking Stats - Using the restored component */}
+        {/* Drinking Stats */}
         <DrinkingStats
           dailyStats={actualDailyStats}
           sensorData={sensorData}
@@ -783,7 +857,7 @@ export default function EnhancedHomepage() {
           />
         </View>
 
-        {/* Weekly Chart - Using the restored component */}
+        {/* Weekly Chart */}
         <View style={[styles.section, { backgroundColor: theme?.card || 'white' }]}>
           <View style={{
             flexDirection: 'row',
@@ -798,18 +872,14 @@ export default function EnhancedHomepage() {
             }}>
               📊 Hydration Progress
             </Text>
-
           </View>
 
-          {/* Chart content - always render the container, toggle the actual chart */}
           <View style={{
             overflow: 'hidden',
             borderRadius: 16,
             marginLeft: -30,
             marginRight: -30,
             marginBottom: -30,
-
-
           }}>
             <WeeklyChart
               weeklyData={actualWeeklyData}
@@ -847,7 +917,98 @@ export default function EnhancedHomepage() {
             </View>
           </View>
         )}
+
+        <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* Logout Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showLogoutModal}
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 20,
+        }}>
+          <View style={{
+            backgroundColor: theme?.card || 'white',
+            borderRadius: 20,
+            padding: 24,
+            alignItems: 'center',
+            width: '100%',
+            maxWidth: 320,
+          }}>
+            <Ionicons name="log-out-outline" size={48} color="#e74c3c" />
+            <Text style={{
+              fontSize: 20,
+              fontWeight: 'bold',
+              color: theme?.text || '#2c3e50',
+              marginTop: 16,
+              marginBottom: 8,
+            }}>
+              Sign Out
+            </Text>
+            <Text style={{
+              fontSize: 15,
+              color: theme?.textMuted || '#7f8c8d',
+              textAlign: 'center',
+              marginBottom: 24,
+            }}>
+              Are you sure you want to sign out?
+            </Text>
+            <View style={{
+              flexDirection: 'row',
+              gap: 12,
+              width: '100%',
+            }}>
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: theme?.border || '#e0e0e0',
+                }}
+                onPress={() => setShowLogoutModal(false)}
+              >
+                <Text style={{
+                  fontSize: 16,
+                  fontWeight: '600',
+                  color: theme?.text || '#2c3e50',
+                }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: '#e74c3c',
+                }}
+                onPress={() => {
+                  setShowLogoutModal(false);
+                  handleLogout();
+                }}
+              >
+                <Text style={{
+                  fontSize: 16,
+                  fontWeight: '600',
+                  color: 'white',
+                }}>
+                  Sign Out
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Data Debugger Modal */}
       <DataDebugger
