@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Switch } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
+import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';
 
 // Import auth and WaterBottleService from your existing Firebase config
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
@@ -21,7 +22,6 @@ try {
   Device = require('expo-device');
   notificationsAvailable = true;
 
-  // Configure for notifications (works on both emulator and physical device)
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -51,8 +51,22 @@ export default function HealthyHydrationPlan() {
   const [timeUntilNext, setTimeUntilNext] = useState('');
   const [notificationsScheduled, setNotificationsScheduled] = useState(false);
 
-  // NEW: Notification toggle state
+  // Notification toggle state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Initialize Firestore directly
+  const [firestoreDb, setFirestoreDb] = useState(null);
+
+  useEffect(() => {
+    // Initialize Firestore when component mounts
+    try {
+      const db = getFirestore(auth.app);
+      setFirestoreDb(db);
+      console.log('✅ Firestore initialized in component');
+    } catch (error) {
+      console.error('❌ Failed to initialize Firestore:', error);
+    }
+  }, []);
 
   // Request notification permissions
   useEffect(() => {
@@ -80,7 +94,6 @@ export default function HealthyHydrationPlan() {
         setNotificationPermission(true);
         console.log('✅ Notification permissions granted');
 
-        // Check if on physical device
         if (Device && Device.isDevice) {
           console.log('📱 Running on physical device - Push notifications fully supported');
         } else {
@@ -259,11 +272,24 @@ export default function HealthyHydrationPlan() {
 
     if (userId) {
       try {
-        // Save preference to Firebase
+        // Save preference to Realtime Database
         await update(ref(database, `users/${userId}/profile`), {
           notificationsEnabled: value,
           lastUpdated: Date.now(),
         });
+
+        // Save preference to Firestore
+        if (firestoreDb) {
+          const userDocRef = doc(firestoreDb, 'users', userId);
+          try {
+            await updateDoc(userDocRef, {
+              'hydrationSettings.notificationsEnabled': value,
+            });
+            console.log('✅ Notification preference updated in Firestore');
+          } catch (firestoreError) {
+            console.log('⚠️ Firestore update failed:', firestoreError.message);
+          }
+        }
 
         if (!value) {
           // If turning off, cancel all scheduled notifications
@@ -336,7 +362,7 @@ export default function HealthyHydrationPlan() {
       console.log(`✅ Scheduled ${numberOfReminders} notifications every ${gapHours} hours`);
       console.log(`📱 Device type: ${isPhysicalDevice ? 'Physical Device (Full Push)' : 'Emulator (Local)'}`);
 
-      // Save to Firebase
+      // Save to Realtime Database
       await update(ref(database, `users/${userId}/profile`), {
         nextReminderTime: nextTime,
         lastScheduledAt: Date.now(),
@@ -377,17 +403,20 @@ export default function HealthyHydrationPlan() {
       const todayStr = getTodayDateString();
       const now = Date.now();
 
-      // ALWAYS save profile settings
+      console.log('💾 Starting save process...');
+      console.log('Goal:', goalValue, 'Gap:', reminderGap);
+
+      // 1. SAVE TO REALTIME DATABASE
       const profileRef = ref(database, `users/${userId}/profile`);
       await update(profileRef, {
         dailyGoal: goalValue,
         reminderGap: parseInt(reminderGap),
-        notificationsEnabled: notificationsEnabled, // Save toggle state
+        notificationsEnabled: notificationsEnabled,
         lastUpdated: now,
         updatedAt: new Date().toISOString(),
       });
 
-      // ALWAYS update today's goal in dailyStats
+      // Update today's goal in dailyStats
       const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
       await update(dailyStatsRef, {
         goal: goalValue,
@@ -395,7 +424,48 @@ export default function HealthyHydrationPlan() {
         lastUpdated: now,
       });
 
-      console.log('✅ Goal saved successfully');
+      console.log('✅ Goal saved to Realtime Database');
+
+      // 2. SAVE TO FIRESTORE DATABASE
+      if (firestoreDb) {
+        try {
+          console.log('🔄 Attempting Firestore update...');
+          const userDocRef = doc(firestoreDb, 'users', userId);
+
+          // Check if document exists first
+          const userDoc = await getDoc(userDocRef);
+
+          if (userDoc.exists()) {
+            console.log('📄 Firestore document exists, updating...');
+
+            // Update existing document
+            await updateDoc(userDocRef, {
+              'hydrationSettings.dailyWaterGoal': goalValue,
+              'hydrationSettings.reminderInterval': parseInt(reminderGap) * 60, // Convert hours to minutes
+              'hydrationSettings.notificationsEnabled': notificationsEnabled,
+            });
+
+            console.log('✅ Goal saved to Firestore successfully!');
+            console.log('   dailyWaterGoal:', goalValue);
+            console.log('   reminderInterval:', parseInt(reminderGap) * 60, 'minutes');
+          } else {
+            console.log('⚠️ Firestore user document does not exist yet');
+            console.log('   Document path: users/', userId);
+            Alert.alert(
+              "Firestore Not Configured",
+              "Firestore user document doesn't exist. Create it in Firebase Console first.",
+              [{ text: "OK" }]
+            );
+          }
+        } catch (firestoreError) {
+          console.error('❌ Firestore update error:', firestoreError);
+          console.error('   Error code:', firestoreError.code);
+          console.error('   Error message:', firestoreError.message);
+          // Don't fail the entire save if Firestore fails
+        }
+      } else {
+        console.log('⚠️ Firestore DB not initialized');
+      }
 
       // Only schedule notifications if enabled
       let notificationScheduled = false;

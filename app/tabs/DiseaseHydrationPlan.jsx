@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Switch } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
 import { getDatabase } from 'firebase/database';
+import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';
 
 // Import auth and WaterBottleService from your existing Firebase config
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
@@ -75,8 +76,22 @@ function DiseaseHydrationPlan() {
   const [timeUntilNext, setTimeUntilNext] = useState('');
   const [notificationsScheduled, setNotificationsScheduled] = useState(false);
 
-  // NEW: Notification toggle state
+  // Notification toggle state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Initialize Firestore directly
+  const [firestoreDb, setFirestoreDb] = useState(null);
+
+  useEffect(() => {
+    // Initialize Firestore when component mounts
+    try {
+      const db = getFirestore(auth.app);
+      setFirestoreDb(db);
+      console.log('✅ Firestore initialized in Disease component');
+    } catch (error) {
+      console.error('❌ Failed to initialize Firestore:', error);
+    }
+  }, []);
 
   useEffect(() => {
     if (notificationsAvailable) {
@@ -250,10 +265,24 @@ function DiseaseHydrationPlan() {
 
     if (userId) {
       try {
+        // Save to Realtime Database
         await update(ref(database, `users/${userId}/diseaseProfile`), {
           notificationsEnabled: value,
           lastUpdated: Date.now(),
         });
+
+        // Save to Firestore
+        if (firestoreDb) {
+          const userDocRef = doc(firestoreDb, 'users', userId);
+          try {
+            await updateDoc(userDocRef, {
+              'hydrationSettings.notificationsEnabled': value,
+            });
+            console.log('✅ Notification preference updated in Firestore');
+          } catch (firestoreError) {
+            console.log('⚠️ Firestore update failed:', firestoreError.message);
+          }
+        }
 
         if (!value) {
           if (notificationsAvailable) {
@@ -361,7 +390,10 @@ function DiseaseHydrationPlan() {
       const todayStr = getTodayDateString();
       const now = Date.now();
 
-      // ALWAYS save disease profile
+      console.log('💾 Starting save process for disease plan...');
+      console.log('Goal:', goalValue, 'Gap:', reminderGap, 'Disease:', diseaseName);
+
+      // 1. SAVE TO REALTIME DATABASE
       const diseaseProfileRef = ref(database, `users/${userId}/diseaseProfile`);
       await update(diseaseProfileRef, {
         dailyGoal: goalValue,
@@ -372,7 +404,7 @@ function DiseaseHydrationPlan() {
         updatedAt: new Date().toISOString(),
       });
 
-      // ALWAYS update today's stats
+      // Update today's stats
       const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
       await update(dailyStatsRef, {
         goal: goalValue,
@@ -382,7 +414,54 @@ function DiseaseHydrationPlan() {
         diseaseName: diseaseName.trim()
       });
 
-      console.log('✅ Medical plan saved');
+      console.log('✅ Medical plan saved to Realtime Database');
+
+      // 2. SAVE TO FIRESTORE DATABASE
+      if (firestoreDb) {
+        try {
+          console.log('🔄 Attempting Firestore update for disease plan...');
+          const userDocRef = doc(firestoreDb, 'users', userId);
+
+          // Check if document exists first
+          const userDoc = await getDoc(userDocRef);
+
+          if (userDoc.exists()) {
+            console.log('📄 Firestore document exists, updating disease plan...');
+
+            // Update existing document - note: this is for DISEASE mode
+            await updateDoc(userDocRef, {
+              'hydrationSettings.dailyWaterGoal': goalValue,
+              'hydrationSettings.reminderInterval': parseInt(reminderGap) * 60, // Convert hours to minutes
+              'hydrationSettings.notificationsEnabled': notificationsEnabled,
+              // Additional disease-specific fields
+              'diseaseHydration.enabled': true,
+              'diseaseHydration.condition': diseaseName.trim(),
+              'diseaseHydration.dailyGoal': goalValue,
+              'diseaseHydration.reminderInterval': parseInt(reminderGap) * 60,
+            });
+
+            console.log('✅ Medical plan saved to Firestore successfully!');
+            console.log('   dailyWaterGoal:', goalValue);
+            console.log('   reminderInterval:', parseInt(reminderGap) * 60, 'minutes');
+            console.log('   disease:', diseaseName.trim());
+          } else {
+            console.log('⚠️ Firestore user document does not exist yet');
+            console.log('   Document path: users/', userId);
+            Alert.alert(
+              "Firestore Not Configured",
+              "Firestore user document doesn't exist. Create it in Firebase Console first.",
+              [{ text: "OK" }]
+            );
+          }
+        } catch (firestoreError) {
+          console.error('❌ Firestore update error:', firestoreError);
+          console.error('   Error code:', firestoreError.code);
+          console.error('   Error message:', firestoreError.message);
+          // Don't fail the entire save if Firestore fails
+        }
+      } else {
+        console.log('⚠️ Firestore DB not initialized');
+      }
 
       // Only schedule if enabled
       let notificationScheduled = false;
