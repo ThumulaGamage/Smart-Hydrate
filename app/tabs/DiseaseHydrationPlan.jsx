@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Switch } from 'react-native';
+import { View, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Switch } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
 import { getDatabase } from 'firebase/database';
 import { getFirestore, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
@@ -7,27 +7,13 @@ import { getFirestore, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore
 // Import auth and WaterBottleService from your existing Firebase config
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
 
-const theme = {
-  primary: '#1D4ED8',
-  secondary: '#1F2937',
-  background: '#0F172A',
-  card: '#1F2937',
-  primaryText: '#FFFFFF',
-  secondaryText: '#D1D5DB',
-  accent: '#0D9488',
-  danger: '#DC2626',
-};
+// Import theme components
+import useTheme from '../../Theme/theme';
+import ThemedView from '../../components/ThemedView';
+import ThemedText from '../../components/ThemedText';
 
-const AVAILABLE_GAPS = [2, 3, 4];
-const WAKING_HOURS = 16;
-
-const getTodayDateString = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+// Import utilities from customize-hydration
+import { AVAILABLE_GAPS, WAKING_HOURS, getTodayDateString, database } from './customize-hydration';
 
 // Graceful notification import
 let Notifications = null;
@@ -51,14 +37,8 @@ try {
   console.log('⚠️ Notifications not available');
 }
 
-let database;
-try {
-  database = getDatabase(auth.app);
-} catch (e) {
-  console.error("Failed to initialize database:", e);
-}
-
 function DiseaseHydrationPlan() {
+  const theme = useTheme();
   const [dailyGoal, setDailyGoal] = useState('');
   const [reminderGap, setReminderGap] = useState(3);
   const [customGap, setCustomGap] = useState('');
@@ -86,7 +66,6 @@ function DiseaseHydrationPlan() {
   const [firestoreDb, setFirestoreDb] = useState(null);
 
   useEffect(() => {
-    // Initialize Firestore when component mounts
     try {
       const db = getFirestore(auth.app);
       setFirestoreDb(db);
@@ -201,7 +180,6 @@ function DiseaseHydrationPlan() {
       return;
     }
 
-    // If plan is disabled, don't track anything
     if (!planEnabled) {
       console.log('⏸️ Disease plan disabled - stopping all tracking');
       setTotalConsumed(0);
@@ -212,7 +190,6 @@ function DiseaseHydrationPlan() {
 
     setLoading(true);
 
-    // Water consumption tracking - ONLY WHEN PLAN IS ENABLED
     const unsubscribeTodayStats = waterBottleService.onTodayStats((stats) => {
       if (stats) {
         const consumed = stats.totalConsumed || 0;
@@ -254,7 +231,7 @@ function DiseaseHydrationPlan() {
       if (unsubscribeTodayStats) unsubscribeTodayStats();
       if (unsubscribeDiseaseProfile) unsubscribeDiseaseProfile();
     };
-  }, [userId, waterBottleService, planEnabled]); // Added planEnabled to dependencies
+  }, [userId, waterBottleService, planEnabled]);
 
   const calculatedIntake = useMemo(() => {
     const goal = parseFloat(dailyGoal) || 0;
@@ -281,36 +258,29 @@ function DiseaseHydrationPlan() {
     }
   };
 
-  // Handle plan enable/disable toggle - WITH COMPLETE DATABASE UPDATES
+  // Handle plan enable/disable toggle
   const handlePlanToggle = async (value) => {
     setPlanEnabled(value);
 
     if (userId) {
       try {
         if (!value) {
-          // ============================================
-          // DISABLE PLAN - Clear EVERYTHING in database
-          // ============================================
-
           console.log('🔴 DISABLING Disease Plan - Clearing all data...');
 
-          // 1. Cancel notifications
           if (notificationsAvailable) {
             await Notifications.cancelAllScheduledNotificationsAsync();
             console.log('🔕 Medical notifications cancelled');
           }
 
-          // 2. Clear local state
           setNotificationsScheduled(false);
           setNextReminderTime(null);
           setTimeUntilNext('');
           setTotalConsumed(0);
           setGoalAchieved(false);
 
-          // 3. Update Realtime Database - COMPLETELY DISABLE
           await update(ref(database, `users/${userId}/diseaseProfile`), {
             planEnabled: false,
-            planType: null,  // Clear plan type
+            planType: null,
             nextReminderTime: null,
             lastScheduledAt: null,
             notificationsScheduled: false,
@@ -319,7 +289,6 @@ function DiseaseHydrationPlan() {
           });
           console.log('✅ Disease plan DISABLED in Realtime Database');
 
-          // 4. Update Firestore - COMPLETELY DISABLE
           if (firestoreDb) {
             const userDocRef = doc(firestoreDb, 'users', userId);
             try {
@@ -335,7 +304,6 @@ function DiseaseHydrationPlan() {
                   'diseaseHydration.disabledAt': Date.now(),
                 });
               } else {
-                // Create document if doesn't exist
                 await setDoc(userDocRef, {
                   diseaseHydration: {
                     planEnabled: false,
@@ -360,22 +328,16 @@ function DiseaseHydrationPlan() {
           );
 
         } else {
-          // ============================================
-          // ENABLE PLAN - Set active in database
-          // ============================================
-
           console.log('🟢 ENABLING Disease Plan...');
 
-          // Update Realtime Database
           await update(ref(database, `users/${userId}/diseaseProfile`), {
             planEnabled: true,
-            planType: 'disease',  // Mark as disease plan
+            planType: 'disease',
             lastUpdated: Date.now(),
             enabledAt: Date.now(),
           });
           console.log('✅ Disease plan ENABLED in Realtime Database');
 
-          // Update Firestore
           if (firestoreDb) {
             const userDocRef = doc(firestoreDb, 'users', userId);
             try {
@@ -389,7 +351,6 @@ function DiseaseHydrationPlan() {
                   'diseaseHydration.enabledAt': Date.now(),
                 });
               } else {
-                // Create document if doesn't exist
                 await setDoc(userDocRef, {
                   diseaseHydration: {
                     planEnabled: true,
@@ -424,13 +385,11 @@ function DiseaseHydrationPlan() {
 
     if (userId) {
       try {
-        // Save to Realtime Database
         await update(ref(database, `users/${userId}/diseaseProfile`), {
           notificationsEnabled: value,
           lastUpdated: Date.now(),
         });
 
-        // Save to Firestore
         if (firestoreDb) {
           const userDocRef = doc(firestoreDb, 'users', userId);
           try {
@@ -564,7 +523,6 @@ function DiseaseHydrationPlan() {
       console.log('💾 Starting save process for disease plan...');
       console.log('Goal:', goalValue, 'Gap:', reminderGap, 'Disease:', diseaseName);
 
-      // 1. SAVE TO REALTIME DATABASE
       const diseaseProfileRef = ref(database, `users/${userId}/diseaseProfile`);
       await update(diseaseProfileRef, {
         dailyGoal: goalValue,
@@ -572,12 +530,11 @@ function DiseaseHydrationPlan() {
         diseaseName: diseaseName.trim(),
         notificationsEnabled: notificationsEnabled,
         planEnabled: planEnabled,
-        planType: 'disease',  // Mark as disease plan
+        planType: 'disease',
         lastUpdated: now,
         updatedAt: new Date().toISOString(),
       });
 
-      // Update today's stats
       const dailyStatsRef = ref(database, `users/${userId}/dailyStats/${todayStr}`);
       await update(dailyStatsRef, {
         goal: goalValue,
@@ -585,24 +542,21 @@ function DiseaseHydrationPlan() {
         lastUpdated: now,
         diseaseMode: true,
         diseaseName: diseaseName.trim(),
-        planType: 'disease',  // Mark which plan is active
+        planType: 'disease',
       });
 
       console.log('✅ Medical plan saved to Realtime Database');
 
-      // 2. SAVE TO FIRESTORE DATABASE
       if (firestoreDb) {
         try {
           console.log('🔄 Attempting Firestore update for disease plan...');
           const userDocRef = doc(firestoreDb, 'users', userId);
 
-          // Check if document exists first
           const userDoc = await getDoc(userDocRef);
 
           if (userDoc.exists()) {
             console.log('📄 Firestore document exists, updating disease plan...');
 
-            // Update existing document - note: this is for DISEASE mode
             await updateDoc(userDocRef, {
               'diseaseHydration.enabled': true,
               'diseaseHydration.planEnabled': planEnabled,
@@ -615,13 +569,9 @@ function DiseaseHydrationPlan() {
             });
 
             console.log('✅ Medical plan saved to Firestore successfully!');
-            console.log('   dailyGoal:', goalValue);
-            console.log('   reminderInterval:', parseInt(reminderGap) * 60, 'minutes');
-            console.log('   disease:', diseaseName.trim());
           } else {
             console.log('📄 Creating new Firestore document...');
 
-            // Create new document
             await setDoc(userDocRef, {
               diseaseHydration: {
                 enabled: true,
@@ -639,15 +589,9 @@ function DiseaseHydrationPlan() {
           }
         } catch (firestoreError) {
           console.error('❌ Firestore update error:', firestoreError);
-          console.error('   Error code:', firestoreError.code);
-          console.error('   Error message:', firestoreError.message);
-          // Don't fail the entire save if Firestore fails
         }
-      } else {
-        console.log('⚠️ Firestore DB not initialized');
       }
 
-      // Only schedule if enabled
       let notificationScheduled = false;
       if (planEnabled && notificationsEnabled && notificationsAvailable && notificationPermission) {
         notificationScheduled = await scheduleHydrationNotifications(
@@ -708,144 +652,146 @@ function DiseaseHydrationPlan() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.danger} />
-        <Text style={[styles.loadingText, { color: theme.secondaryText }]}>Loading...</Text>
-      </View>
+      <ThemedView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#DC2626" />
+        <ThemedText style={styles.loadingText}>Loading...</ThemedText>
+      </ThemedView>
     );
   }
 
   if (!userId) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={[styles.loadingText, { color: theme.secondaryText }]}>Please sign in</Text>
-      </View>
+      <ThemedView style={styles.loadingContainer}>
+        <ThemedText style={styles.loadingText}>Please sign in</ThemedText>
+      </ThemedView>
     );
   }
 
   return (
-    <ScrollView style={styles.planScrollView} contentContainerStyle={styles.planScrollContent}>
-      <View style={styles.planContainer}>
-        <Text style={[styles.planTitle, { color: theme.primaryText }]}>Disease Hydration Plan</Text>
+    <ScrollView style={[styles.planScrollView, { backgroundColor: theme.background }]} contentContainerStyle={styles.planScrollContent}>
+      <ThemedView style={styles.planContainer}>
+        <ThemedText style={styles.planTitle}>Disease Hydration Plan</ThemedText>
 
-        <View style={[styles.warningBanner, { backgroundColor: theme.danger }]}>
-          <Text style={styles.warningEmoji}>⚠️</Text>
-          <Text style={styles.warningText}>
+        <View style={styles.warningBanner}>
+          <ThemedText style={styles.warningEmoji}>⚠️</ThemedText>
+          <ThemedText style={styles.warningText}>
             Consult your doctor before setting fluid goals.
-          </Text>
+          </ThemedText>
         </View>
 
         {/* Plan Enable/Disable Toggle */}
-        <View style={[styles.toggleCard, { backgroundColor: theme.secondary }]}>
+        <View style={[styles.toggleCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
-              <Text style={[styles.toggleTitle, { color: theme.primaryText }]}>
+              <ThemedText style={styles.toggleTitle}>
                 ❤️ Enable Disease Hydration Plan
-              </Text>
-              <Text style={[styles.toggleDescription, { color: theme.secondaryText }]}>
+              </ThemedText>
+              <ThemedText style={[styles.toggleDescription, { color: theme.secondaryText }]}>
                 {planEnabled
                   ? 'Active - Hardware will track this medical plan'
                   : 'Disabled - Hardware will not track'}
-              </Text>
+              </ThemedText>
             </View>
             <Switch
               value={planEnabled}
               onValueChange={handlePlanToggle}
-              trackColor={{ false: '#374151', true: theme.danger }}
+              trackColor={{ false: theme.border, true: '#DC2626' }}
               thumbColor={planEnabled ? '#FFFFFF' : '#9CA3AF'}
-              ios_backgroundColor="#374151"
+              ios_backgroundColor={theme.border}
             />
           </View>
           {!planEnabled && (
-            <Text style={[styles.toggleWarning, { color: '#F59E0B' }]}>
+            <ThemedText style={styles.toggleWarning}>
               ⚠️ Enable to start medical tracking with your water bottle hardware
-            </Text>
+            </ThemedText>
           )}
         </View>
 
         {/* Notification Toggle Switch */}
-        <View style={[styles.toggleCard, { backgroundColor: theme.secondary }]}>
+        <View style={[styles.toggleCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
-              <Text style={[styles.toggleTitle, { color: theme.primaryText }]}>
+              <ThemedText style={styles.toggleTitle}>
                 💊 Medical Reminder Notifications
-              </Text>
-              <Text style={[styles.toggleDescription, { color: theme.secondaryText }]}>
+              </ThemedText>
+              <ThemedText style={[styles.toggleDescription, { color: theme.secondaryText }]}>
                 {notificationsEnabled
                   ? 'You will receive medical hydration reminders'
                   : 'Medical notifications are turned off'}
-              </Text>
+              </ThemedText>
             </View>
             <Switch
               value={notificationsEnabled}
               onValueChange={handleNotificationToggle}
-              trackColor={{ false: '#374151', true: theme.danger }}
+              trackColor={{ false: theme.border, true: '#DC2626' }}
               thumbColor={notificationsEnabled ? '#FFFFFF' : '#9CA3AF'}
-              ios_backgroundColor="#374151"
+              ios_backgroundColor={theme.border}
               disabled={!planEnabled}
             />
           </View>
           {!notificationsAvailable && (
-            <Text style={[styles.toggleWarning, { color: '#F59E0B' }]}>
+            <ThemedText style={styles.toggleWarning}>
               ⚠️ Install expo-notifications for medical reminders
-            </Text>
+            </ThemedText>
           )}
           {notificationsAvailable && !notificationPermission && notificationsEnabled && (
-            <Text style={[styles.toggleWarning, { color: '#F59E0B' }]}>
+            <ThemedText style={styles.toggleWarning}>
               ⚠️ Notification permissions required
-            </Text>
+            </ThemedText>
           )}
         </View>
 
-        {/* Countdown Timer - Only if plan enabled and notifications enabled */}
+        {/* Countdown Timer */}
         {planEnabled && notificationsEnabled && notificationsScheduled && nextReminderTime && timeUntilNext && (
-          <View style={[styles.countdownCard, { backgroundColor: theme.danger }]}>
-            <Text style={styles.countdownTitle}>⏰ Next Medical Reminder In:</Text>
-            <Text style={styles.countdownTime}>{timeUntilNext}</Text>
-            <Text style={styles.countdownSubtext}>
+          <View style={styles.countdownCard}>
+            <ThemedText style={styles.countdownTitle}>⏰ Next Medical Reminder In:</ThemedText>
+            <ThemedText style={styles.countdownTime}>{timeUntilNext}</ThemedText>
+            <ThemedText style={styles.countdownSubtext}>
               {diseaseName}: {calculatedIntake.intake}ml prescribed
-            </Text>
+            </ThemedText>
           </View>
         )}
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: theme.secondaryText }]}>Disease/Condition Name *</Text>
+          <ThemedText style={[styles.label, { color: theme.secondaryText }]}>Disease/Condition Name *</ThemedText>
           <TextInput
             style={[styles.input, {
-              backgroundColor: theme.secondary,
-              color: theme.primaryText,
+              backgroundColor: theme.card,
+              color: theme.text,
+              borderColor: theme.border,
               opacity: planEnabled ? 1 : 0.5
             }]}
             onChangeText={setDiseaseName}
             value={diseaseName}
             placeholder="e.g., Kidney Disease, Heart Failure"
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={theme.secondaryText}
             editable={planEnabled}
           />
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: theme.secondaryText }]}>Daily Water Goal (ML) *</Text>
+          <ThemedText style={[styles.label, { color: theme.secondaryText }]}>Daily Water Goal (ML) *</ThemedText>
           <TextInput
             style={[styles.input, {
-              backgroundColor: theme.secondary,
-              color: theme.primaryText,
+              backgroundColor: theme.card,
+              color: theme.text,
+              borderColor: theme.border,
               opacity: planEnabled ? 1 : 0.5
             }]}
             onChangeText={setDailyGoal}
             value={dailyGoal}
             keyboardType="numeric"
             placeholder="Enter goal based on doctor's advice"
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={theme.secondaryText}
             editable={planEnabled}
           />
-          <Text style={[styles.helperText, { color: theme.secondaryText }]}>
+          <ThemedText style={[styles.helperText, { color: theme.secondaryText }]}>
             💡 Some conditions require fluid restriction. Follow your doctor's advice.
-          </Text>
+          </ThemedText>
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: theme.secondaryText }]}>Reminder Time Gap (Hours) *</Text>
+          <ThemedText style={[styles.label, { color: theme.secondaryText }]}>Reminder Time Gap (Hours) *</ThemedText>
           <View style={styles.gapSelector}>
             {AVAILABLE_GAPS.map(gap => (
               <TouchableOpacity
@@ -853,7 +799,8 @@ function DiseaseHydrationPlan() {
                 style={[
                   styles.gapButton,
                   {
-                    backgroundColor: reminderGap === gap ? theme.danger : theme.secondary,
+                    backgroundColor: reminderGap === gap ? '#DC2626' : theme.card,
+                    borderColor: theme.border,
                     opacity: planEnabled ? 1 : 0.5
                   },
                 ]}
@@ -865,7 +812,7 @@ function DiseaseHydrationPlan() {
                 }}
                 disabled={!planEnabled}
               >
-                <Text style={[styles.gapText, { color: theme.primaryText }]}>{gap} hrs</Text>
+                <ThemedText style={styles.gapText}>{gap} hrs</ThemedText>
               </TouchableOpacity>
             ))}
 
@@ -873,10 +820,9 @@ function DiseaseHydrationPlan() {
               style={[
                 styles.inputCustom,
                 {
-                  backgroundColor: theme.secondary,
-                  color: theme.primaryText,
-                  borderColor: reminderGap > 4 ? theme.danger : '#374151',
-                  borderWidth: 1,
+                  backgroundColor: theme.card,
+                  color: theme.text,
+                  borderColor: reminderGap > 4 ? '#DC2626' : theme.border,
                   opacity: planEnabled ? 1 : 0.5
                 }
               ]}
@@ -884,103 +830,102 @@ function DiseaseHydrationPlan() {
               value={customGap}
               keyboardType="numeric"
               placeholder="Custom"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={theme.secondaryText}
               editable={planEnabled}
             />
           </View>
         </View>
 
-        {/* Real-Time Progress - ONLY WHEN PLAN IS ENABLED */}
+        {/* Real-Time Progress */}
         {planEnabled ? (
-          <View style={[styles.realTimeCard, { backgroundColor: theme.secondary }]}>
-            <Text style={[styles.summaryTitle, { color: theme.primaryText }]}>
+          <View style={[styles.realTimeCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <ThemedText style={styles.summaryTitle}>
               🔴 Live Hydration Progress
-            </Text>
-            <Text style={[styles.liveIndicator, { color: theme.danger }]}>
+            </ThemedText>
+            <ThemedText style={styles.liveIndicator}>
               ● Real-time from your water bottle hardware
-            </Text>
+            </ThemedText>
 
-            <View style={styles.progressContainer}>
-              <View style={[styles.progressBar, { width: `${progressPercentage}%`, backgroundColor: goalAchieved ? theme.accent : theme.danger }]} />
+            <View style={[styles.progressContainer, { backgroundColor: theme.border }]}>
+              <View style={[styles.progressBar, { width: `${progressPercentage}%`, backgroundColor: goalAchieved ? '#0D9488' : '#DC2626' }]} />
             </View>
-            <Text style={[styles.progressText, { color: theme.secondaryText, marginTop: 5 }]}>
+            <ThemedText style={[styles.progressText, { color: theme.secondaryText }]}>
               {progressPercentage.toFixed(1)}% of Goal
-            </Text>
+            </ThemedText>
 
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Total Consumed Today:</Text>
-              <Text style={[styles.summaryValue, { color: goalAchieved ? theme.accent : theme.primaryText }]}>
+              <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Total Consumed Today:</ThemedText>
+              <ThemedText style={[styles.summaryValue, { color: goalAchieved ? '#0D9488' : theme.text }]}>
                 {totalConsumed} ml
-              </Text>
+              </ThemedText>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Daily Goal:</Text>
-              <Text style={[styles.summaryValue, { color: theme.danger }]}>
+              <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Daily Goal:</ThemedText>
+              <ThemedText style={[styles.summaryValue, { color: '#DC2626' }]}>
                 {currentGoal > 0 ? currentGoal : '--'} ml
-              </Text>
+              </ThemedText>
             </View>
 
             {diseaseName && (
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Condition:</Text>
-                <Text style={[styles.summaryValue, { color: theme.danger }]}>
+                <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Condition:</ThemedText>
+                <ThemedText style={[styles.summaryValue, { color: '#DC2626' }]}>
                   {diseaseName}
-                </Text>
+                </ThemedText>
               </View>
             )}
 
             {goalAchieved && (
-              <View style={[styles.achievementBanner, { backgroundColor: theme.accent }]}>
-                <Text style={styles.achievementEmoji}>🎉</Text>
-                <Text style={styles.achievementText}>Goal Achieved!</Text>
+              <View style={styles.achievementBanner}>
+                <ThemedText style={styles.achievementEmoji}>🎉</ThemedText>
+                <ThemedText style={styles.achievementText}>Goal Achieved!</ThemedText>
               </View>
             )}
           </View>
         ) : (
-          <View style={[styles.disabledCard, { backgroundColor: theme.secondary }]}>
-            <Text style={[styles.disabledTitle, { color: theme.secondaryText }]}>
+          <View style={[styles.disabledCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <ThemedText style={[styles.disabledTitle, { color: theme.secondaryText }]}>
               ⏸️ Medical Hardware Tracking Disabled
-            </Text>
-            <Text style={[styles.disabledText, { color: theme.secondaryText }]}>
+            </ThemedText>
+            <ThemedText style={[styles.disabledText, { color: theme.secondaryText }]}>
               Enable your medical plan above to start tracking with your water bottle hardware
-            </Text>
+            </ThemedText>
           </View>
         )}
 
-        <View style={[styles.summaryCard, { backgroundColor: theme.secondary, marginTop: 20 }]}>
-          <Text style={[styles.summaryTitle, { color: theme.danger }]}>
+        <View style={[styles.summaryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <ThemedText style={[styles.summaryTitle, { color: '#DC2626' }]}>
             Your Calculated Intake Plan:
-          </Text>
+          </ThemedText>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Condition:</Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
+            <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Condition:</ThemedText>
+            <ThemedText style={styles.summaryValue}>
               {diseaseName || 'Not specified'}
-            </Text>
+            </ThemedText>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminder Gap:</Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
+            <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminder Gap:</ThemedText>
+            <ThemedText style={styles.summaryValue}>
               Every {reminderGap} hours
-            </Text>
+            </ThemedText>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminders Per Day:</Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
+            <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Reminders Per Day:</ThemedText>
+            <ThemedText style={styles.summaryValue}>
               {calculatedIntake.reminders > 0 ? calculatedIntake.reminders : '--'}
-            </Text>
+            </ThemedText>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Amount Per Reminder:</Text>
-            <Text style={[styles.summaryValue, { color: theme.danger }]}>
+            <ThemedText style={[styles.summaryLabel, { color: theme.secondaryText }]}>Amount Per Reminder:</ThemedText>
+            <ThemedText style={[styles.summaryValue, { color: '#DC2626' }]}>
               {calculatedIntake.intake > 0 ? `${calculatedIntake.intake} ml` : '--'}
-            </Text>
+            </ThemedText>
           </View>
 
           <TouchableOpacity
             style={[
               styles.saveButton,
               {
-                backgroundColor: theme.danger,
                 opacity: (planEnabled && dailyGoal && parseFloat(dailyGoal) > 0 && diseaseName.trim() !== '') ? 1 : 0.5
               }
             ]}
@@ -990,11 +935,11 @@ function DiseaseHydrationPlan() {
             {isSaving ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.saveButtonText}>Save Medical Plan</Text>
+              <ThemedText style={styles.saveButtonText}>Save Medical Plan</ThemedText>
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </ThemedView>
     </ScrollView>
   );
 }
@@ -1002,48 +947,48 @@ function DiseaseHydrationPlan() {
 const styles = StyleSheet.create({
   planScrollView: { flex: 1 },
   planScrollContent: { padding: 20, paddingBottom: 50 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', height: 300, backgroundColor: theme.background },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', height: 300 },
   loadingText: { marginTop: 10, fontSize: 16 },
   planContainer: { flex: 1 },
-  planTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-  toggleCard: { padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#374151' },
+  planTitle: { fontSize: 20, fontWeight: '600', marginBottom: 20, textAlign: 'center' },
+  toggleCard: { padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   toggleInfo: { flex: 1, marginRight: 12 },
   toggleTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
   toggleDescription: { fontSize: 13, lineHeight: 18 },
-  toggleWarning: { fontSize: 12, marginTop: 10, fontStyle: 'italic' },
-  countdownCard: { padding: 20, borderRadius: 15, marginBottom: 20, alignItems: 'center', elevation: 5 },
+  toggleWarning: { fontSize: 12, marginTop: 10, fontStyle: 'italic', color: '#F59E0B' },
+  countdownCard: { padding: 20, borderRadius: 12, marginBottom: 20, alignItems: 'center', backgroundColor: '#DC2626' },
   countdownTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', marginBottom: 10 },
   countdownTime: { color: '#FFFFFF', fontSize: 36, fontWeight: 'bold', marginBottom: 5 },
   countdownSubtext: { color: '#FFFFFF', fontSize: 14, opacity: 0.9 },
-  warningBanner: { padding: 15, borderRadius: 10, marginBottom: 20, alignItems: 'center' },
-  warningEmoji: { fontSize: 32, marginBottom: 8 },
+  warningBanner: { padding: 15, borderRadius: 12, marginBottom: 20, alignItems: 'center', backgroundColor: '#DC2626' },
+  warningEmoji: { fontSize: 32, marginBottom: 8, color: '#FFFFFF' },
   warningText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', textAlign: 'center', lineHeight: 20 },
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 16, marginBottom: 8, fontWeight: '600' },
-  input: { height: 50, borderRadius: 10, paddingHorizontal: 15, fontSize: 18, borderWidth: 1, borderColor: '#374151' },
+  input: { height: 50, borderRadius: 12, paddingHorizontal: 15, fontSize: 16, borderWidth: 1 },
   helperText: { fontSize: 12, marginTop: 5, fontStyle: 'italic' },
   gapSelector: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  gapButton: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#374151' },
-  gapText: { fontWeight: '700', fontSize: 16 },
-  inputCustom: { flex: 1, height: 50, borderRadius: 8, paddingHorizontal: 15, fontSize: 16, textAlign: 'center' },
-  summaryCard: { padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#374151' },
-  realTimeCard: { padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#374151', marginBottom: 10 },
-  disabledCard: { padding: 30, borderRadius: 12, borderWidth: 1, borderColor: '#374151', marginBottom: 10, alignItems: 'center' },
-  disabledTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  gapButton: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  gapText: { fontWeight: '600', fontSize: 16 },
+  inputCustom: { flex: 1, height: 50, borderRadius: 12, paddingHorizontal: 15, fontSize: 16, textAlign: 'center', borderWidth: 1 },
+  summaryCard: { padding: 20, borderRadius: 12, borderWidth: 1, marginTop: 20 },
+  realTimeCard: { padding: 20, borderRadius: 12, borderWidth: 1, marginBottom: 10 },
+  disabledCard: { padding: 30, borderRadius: 12, borderWidth: 1, marginBottom: 10, alignItems: 'center' },
+  disabledTitle: { fontSize: 18, fontWeight: '600', marginBottom: 10 },
   disabledText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  summaryTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  liveIndicator: { fontSize: 12, fontWeight: '600', marginBottom: 15 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#374151', marginBottom: 5 },
+  summaryTitle: { fontSize: 18, fontWeight: '600', marginBottom: 10 },
+  liveIndicator: { fontSize: 12, fontWeight: '600', marginBottom: 15, color: '#DC2626' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, marginBottom: 5 },
   summaryLabel: { fontSize: 15 },
-  summaryValue: { fontSize: 16, fontWeight: '700' },
-  saveButton: { padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 20 },
+  summaryValue: { fontSize: 16, fontWeight: '600' },
+  saveButton: { padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 20, backgroundColor: '#DC2626' },
   saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
-  progressContainer: { height: 10, backgroundColor: '#374151', borderRadius: 5, overflow: 'hidden', marginBottom: 8 },
+  progressContainer: { height: 10, borderRadius: 5, overflow: 'hidden', marginBottom: 8 },
   progressBar: { height: '100%', borderRadius: 5 },
-  progressText: { textAlign: 'right', fontSize: 12 },
-  achievementBanner: { marginTop: 15, padding: 15, borderRadius: 10, alignItems: 'center' },
-  achievementEmoji: { fontSize: 32, marginBottom: 5 },
+  progressText: { textAlign: 'right', fontSize: 12, marginTop: 5 },
+  achievementBanner: { marginTop: 15, padding: 15, borderRadius: 12, alignItems: 'center', backgroundColor: '#0D9488' },
+  achievementEmoji: { fontSize: 32, marginBottom: 5, color: '#FFFFFF' },
   achievementText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
 });
 
