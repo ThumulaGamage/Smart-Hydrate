@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Switch } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
-import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 
 // Import auth and WaterBottleService from your existing Firebase config
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
@@ -53,6 +53,9 @@ export default function HealthyHydrationPlan() {
 
   // Notification toggle state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Plan enable/disable state
+  const [planEnabled, setPlanEnabled] = useState(true);
 
   // Initialize Firestore directly
   const [firestoreDb, setFirestoreDb] = useState(null);
@@ -109,9 +112,12 @@ export default function HealthyHydrationPlan() {
     }
   };
 
-  // Countdown timer effect
+  // Countdown timer effect - ONLY RUNS WHEN PLAN IS ENABLED
   useEffect(() => {
-    if (!nextReminderTime || !notificationsEnabled) return;
+    if (!nextReminderTime || !notificationsEnabled || !planEnabled) {
+      setTimeUntilNext('');
+      return;
+    }
 
     const interval = setInterval(() => {
       const now = new Date().getTime();
@@ -131,7 +137,7 @@ export default function HealthyHydrationPlan() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [nextReminderTime, notificationsEnabled]);
+  }, [nextReminderTime, notificationsEnabled, planEnabled]);
 
   // Wait for authentication
   useEffect(() => {
@@ -154,7 +160,7 @@ export default function HealthyHydrationPlan() {
     return () => unsubscribe();
   }, []);
 
-  // Load user settings including notification toggle
+  // Load user settings including notification toggle and plan status
   const loadUserSettings = async (uid) => {
     const profileRef = ref(database, `users/${uid}/profile`);
     onValue(profileRef, (snapshot) => {
@@ -166,6 +172,11 @@ export default function HealthyHydrationPlan() {
           setNotificationsEnabled(data.notificationsEnabled);
         }
 
+        // Load plan enabled status
+        if (data.planEnabled !== undefined) {
+          setPlanEnabled(data.planEnabled);
+        }
+
         // Load next reminder time
         if (data.nextReminderTime) {
           setNextReminderTime(data.nextReminderTime);
@@ -175,22 +186,31 @@ export default function HealthyHydrationPlan() {
     });
   };
 
-  // Real-time listener for consumption data (ALWAYS WORKS regardless of notifications)
+  // Real-time listener - ONLY WORKS WHEN PLAN IS ENABLED
   useEffect(() => {
     if (!userId || !waterBottleService) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    console.log('🔄 Setting up real-time listeners for hydration plan...');
+    // If plan is disabled, don't track anything
+    if (!planEnabled) {
+      console.log('⏸️ Healthy plan disabled - stopping all tracking');
+      setTotalConsumed(0);
+      setGoalAchieved(false);
+      setLoading(false);
+      return;
+    }
 
-    // Listen to today's stats in real-time (ALWAYS ACTIVE)
+    setLoading(true);
+    console.log('🔄 Setting up real-time listeners for healthy hydration plan...');
+
+    // Listen to today's stats in real-time (ONLY WHEN PLAN IS ENABLED)
     const unsubscribeTodayStats = waterBottleService.onTodayStats((stats) => {
       console.log('📊 Real-time stats update received:', stats);
 
       if (stats) {
-        // Update total consumed (real-time from bottle) - ALWAYS WORKS
+        // Update total consumed (real-time from bottle)
         const consumed = stats.totalConsumed || 0;
         setTotalConsumed(consumed);
 
@@ -230,6 +250,9 @@ export default function HealthyHydrationPlan() {
         if (data.notificationsEnabled !== undefined) {
           setNotificationsEnabled(data.notificationsEnabled);
         }
+        if (data.planEnabled !== undefined) {
+          setPlanEnabled(data.planEnabled);
+        }
       }
     });
 
@@ -238,7 +261,7 @@ export default function HealthyHydrationPlan() {
       if (unsubscribeTodayStats) unsubscribeTodayStats();
       if (unsubscribeProfile) unsubscribeProfile();
     };
-  }, [userId, waterBottleService]);
+  }, [userId, waterBottleService, planEnabled]); // Added planEnabled to dependencies
 
   // Calculate intake per reminder
   const calculatedIntake = useMemo(() => {
@@ -263,6 +286,143 @@ export default function HealthyHydrationPlan() {
     } else if (text === '') {
       setReminderGap(3);
       setCustomGap('');
+    }
+  };
+
+  // Handle plan enable/disable toggle - WITH COMPLETE DATABASE UPDATES
+  const handlePlanToggle = async (value) => {
+    setPlanEnabled(value);
+
+    if (userId) {
+      try {
+        if (!value) {
+          // ============================================
+          // DISABLE PLAN - Clear EVERYTHING in database
+          // ============================================
+
+          console.log('🔴 DISABLING Healthy Plan - Clearing all data...');
+
+          // 1. Cancel notifications
+          if (notificationsAvailable) {
+            await Notifications.cancelAllScheduledNotificationsAsync();
+            console.log('🔕 Notifications cancelled');
+          }
+
+          // 2. Clear local state
+          setNotificationsScheduled(false);
+          setNextReminderTime(null);
+          setTimeUntilNext('');
+          setTotalConsumed(0);
+          setGoalAchieved(false);
+
+          // 3. Update Realtime Database - COMPLETELY DISABLE
+          await update(ref(database, `users/${userId}/profile`), {
+            planEnabled: false,
+            planType: null,  // Clear plan type
+            nextReminderTime: null,
+            lastScheduledAt: null,
+            notificationsScheduled: false,
+            lastUpdated: Date.now(),
+            disabledAt: Date.now(),
+          });
+          console.log('✅ Healthy plan DISABLED in Realtime Database');
+
+          // 4. Update Firestore - COMPLETELY DISABLE
+          if (firestoreDb) {
+            const userDocRef = doc(firestoreDb, 'users', userId);
+            try {
+              const userDoc = await getDoc(userDocRef);
+
+              if (userDoc.exists()) {
+                await updateDoc(userDocRef, {
+                  'hydrationSettings.planEnabled': false,
+                  'hydrationSettings.planType': null,
+                  'hydrationSettings.nextReminderTime': null,
+                  'hydrationSettings.notificationsScheduled': false,
+                  'hydrationSettings.lastUpdated': Date.now(),
+                  'hydrationSettings.disabledAt': Date.now(),
+                });
+              } else {
+                // Create document if doesn't exist
+                await setDoc(userDocRef, {
+                  hydrationSettings: {
+                    planEnabled: false,
+                    planType: null,
+                    nextReminderTime: null,
+                    notificationsScheduled: false,
+                    lastUpdated: Date.now(),
+                    disabledAt: Date.now(),
+                  }
+                }, { merge: true });
+              }
+              console.log('✅ Healthy plan DISABLED in Firestore');
+            } catch (firestoreError) {
+              console.error('⚠️ Firestore update failed:', firestoreError);
+            }
+          }
+
+          Alert.alert(
+            "Plan Disabled ⏸️",
+            "Your Healthy Hydration Plan has been completely disabled.\n\n✓ All reminders cancelled\n✓ Tracking stopped\n✓ Database fully updated\n✓ Hardware will not track\n\nYou can enable it anytime.",
+            [{ text: "OK" }]
+          );
+
+        } else {
+          // ============================================
+          // ENABLE PLAN - Set active in database
+          // ============================================
+
+          console.log('🟢 ENABLING Healthy Plan...');
+
+          // Update Realtime Database
+          await update(ref(database, `users/${userId}/profile`), {
+            planEnabled: true,
+            planType: 'healthy',  // Mark as healthy plan
+            lastUpdated: Date.now(),
+            enabledAt: Date.now(),
+          });
+          console.log('✅ Healthy plan ENABLED in Realtime Database');
+
+          // Update Firestore
+          if (firestoreDb) {
+            const userDocRef = doc(firestoreDb, 'users', userId);
+            try {
+              const userDoc = await getDoc(userDocRef);
+
+              if (userDoc.exists()) {
+                await updateDoc(userDocRef, {
+                  'hydrationSettings.planEnabled': true,
+                  'hydrationSettings.planType': 'healthy',
+                  'hydrationSettings.lastUpdated': Date.now(),
+                  'hydrationSettings.enabledAt': Date.now(),
+                });
+              } else {
+                // Create document if doesn't exist
+                await setDoc(userDocRef, {
+                  hydrationSettings: {
+                    planEnabled: true,
+                    planType: 'healthy',
+                    lastUpdated: Date.now(),
+                    enabledAt: Date.now(),
+                  }
+                }, { merge: true });
+              }
+              console.log('✅ Healthy plan ENABLED in Firestore');
+            } catch (firestoreError) {
+              console.error('⚠️ Firestore update failed:', firestoreError);
+            }
+          }
+
+          Alert.alert(
+            "Plan Enabled ✅",
+            "Your Healthy Hydration Plan is now active!\n\n✓ Database updated\n✓ Hardware will track this plan\n\nSave your settings to schedule reminders.",
+            [{ text: "OK" }]
+          );
+        }
+      } catch (error) {
+        console.error('❌ Error updating plan status:', error);
+        Alert.alert("Error", "Failed to update plan status. Please try again.");
+      }
     }
   };
 
@@ -299,9 +459,10 @@ export default function HealthyHydrationPlan() {
           }
           setNotificationsScheduled(false);
           setNextReminderTime(null);
+          setTimeUntilNext('');
         } else {
           // If turning on, reschedule if we have settings
-          if (dailyGoal && reminderGap) {
+          if (dailyGoal && reminderGap && planEnabled) {
             Alert.alert(
               "Notifications Enabled",
               "Please save your plan again to schedule reminders.",
@@ -317,8 +478,8 @@ export default function HealthyHydrationPlan() {
 
   // Schedule notifications (works on both emulator and physical device)
   const scheduleHydrationNotifications = async (gapHours, intakeAmount) => {
-    if (!notificationsAvailable || !notificationsEnabled) {
-      console.log('⚠️ Notifications disabled or not available');
+    if (!notificationsAvailable || !notificationsEnabled || !planEnabled) {
+      console.log('⚠️ Notifications disabled or not available or plan disabled');
       return false;
     }
 
@@ -347,6 +508,7 @@ export default function HealthyHydrationPlan() {
             priority: Notifications.AndroidNotificationPriority.HIGH,
             data: {
               type: 'hydration_reminder',
+              planType: 'healthy',
               amount: intakeAmount,
               reminderNumber: i + 1,
               totalReminders: numberOfReminders,
@@ -366,6 +528,7 @@ export default function HealthyHydrationPlan() {
       await update(ref(database, `users/${userId}/profile`), {
         nextReminderTime: nextTime,
         lastScheduledAt: Date.now(),
+        notificationsScheduled: true,
       });
 
       return true;
@@ -381,6 +544,15 @@ export default function HealthyHydrationPlan() {
       return;
     }
 
+    if (!planEnabled) {
+      Alert.alert(
+        "Plan Disabled",
+        "Please enable your Healthy Hydration Plan first using the toggle above.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     const goalValue = parseFloat(dailyGoal);
     if (!goalValue || goalValue <= 0) {
       Alert.alert("Invalid Goal", "Please enter a valid daily water goal (in ML).");
@@ -392,7 +564,7 @@ export default function HealthyHydrationPlan() {
       return;
     }
 
-    // Proceed with save regardless of notification settings
+    // Proceed with save
     await proceedWithSave(goalValue);
   };
 
@@ -403,7 +575,7 @@ export default function HealthyHydrationPlan() {
       const todayStr = getTodayDateString();
       const now = Date.now();
 
-      console.log('💾 Starting save process...');
+      console.log('💾 Starting save process for healthy plan...');
       console.log('Goal:', goalValue, 'Gap:', reminderGap);
 
       // 1. SAVE TO REALTIME DATABASE
@@ -412,6 +584,8 @@ export default function HealthyHydrationPlan() {
         dailyGoal: goalValue,
         reminderGap: parseInt(reminderGap),
         notificationsEnabled: notificationsEnabled,
+        planEnabled: planEnabled,
+        planType: 'healthy',  // Mark as healthy plan
         lastUpdated: now,
         updatedAt: new Date().toISOString(),
       });
@@ -422,9 +596,10 @@ export default function HealthyHydrationPlan() {
         goal: goalValue,
         date: todayStr,
         lastUpdated: now,
+        planType: 'healthy',  // Mark which plan is active
       });
 
-      console.log('✅ Goal saved to Realtime Database');
+      console.log('✅ Healthy plan saved to Realtime Database');
 
       // 2. SAVE TO FIRESTORE DATABASE
       if (firestoreDb) {
@@ -443,19 +618,28 @@ export default function HealthyHydrationPlan() {
               'hydrationSettings.dailyWaterGoal': goalValue,
               'hydrationSettings.reminderInterval': parseInt(reminderGap) * 60, // Convert hours to minutes
               'hydrationSettings.notificationsEnabled': notificationsEnabled,
+              'hydrationSettings.planEnabled': planEnabled,
+              'hydrationSettings.planType': 'healthy',  // Mark as healthy plan
+              'hydrationSettings.lastUpdated': now,
             });
 
-            console.log('✅ Goal saved to Firestore successfully!');
-            console.log('   dailyWaterGoal:', goalValue);
-            console.log('   reminderInterval:', parseInt(reminderGap) * 60, 'minutes');
+            console.log('✅ Healthy plan saved to Firestore successfully!');
           } else {
-            console.log('⚠️ Firestore user document does not exist yet');
-            console.log('   Document path: users/', userId);
-            Alert.alert(
-              "Firestore Not Configured",
-              "Firestore user document doesn't exist. Create it in Firebase Console first.",
-              [{ text: "OK" }]
-            );
+            console.log('📄 Creating new Firestore document...');
+
+            // Create new document
+            await setDoc(userDocRef, {
+              hydrationSettings: {
+                dailyWaterGoal: goalValue,
+                reminderInterval: parseInt(reminderGap) * 60,
+                notificationsEnabled: notificationsEnabled,
+                planEnabled: planEnabled,
+                planType: 'healthy',
+                lastUpdated: now,
+              }
+            }, { merge: true });
+
+            console.log('✅ New Firestore document created!');
           }
         } catch (firestoreError) {
           console.error('❌ Firestore update error:', firestoreError);
@@ -467,9 +651,9 @@ export default function HealthyHydrationPlan() {
         console.log('⚠️ Firestore DB not initialized');
       }
 
-      // Only schedule notifications if enabled
+      // Only schedule notifications if enabled and plan is enabled
       let notificationScheduled = false;
-      if (notificationsEnabled && notificationsAvailable && notificationPermission) {
+      if (planEnabled && notificationsEnabled && notificationsAvailable && notificationPermission) {
         notificationScheduled = await scheduleHydrationNotifications(
           parseInt(reminderGap),
           calculatedIntake.intake
@@ -480,7 +664,9 @@ export default function HealthyHydrationPlan() {
       let alertTitle = "Plan Saved! 🎉";
       let alertMessage = `Your daily water goal of ${goalValue}ml has been saved!\n\n` +
                         `💧 Drink ${calculatedIntake.intake}ml every ${reminderGap} hours\n` +
-                        `📊 ${calculatedIntake.reminders} reminders per day\n\n`;
+                        `📊 ${calculatedIntake.reminders} reminders per day\n` +
+                        `🔵 Plan Type: Healthy\n` +
+                        `💾 Database: Updated\n\n`;
 
       if (notificationScheduled) {
         const nextReminderDate = new Date(nextReminderTime);
@@ -538,6 +724,34 @@ export default function HealthyHydrationPlan() {
       <View style={styles.planContainer}>
         <Text style={[styles.planTitle, { color: theme.primaryText }]}>Set Your Daily Hydration Plan</Text>
 
+        {/* Plan Enable/Disable Toggle */}
+        <View style={[styles.toggleCard, { backgroundColor: theme.secondary }]}>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Text style={[styles.toggleTitle, { color: theme.primaryText }]}>
+                💚 Enable Healthy Hydration Plan
+              </Text>
+              <Text style={[styles.toggleDescription, { color: theme.secondaryText }]}>
+                {planEnabled
+                  ? 'Active - Hardware will track this plan'
+                  : 'Disabled - Hardware will not track'}
+              </Text>
+            </View>
+            <Switch
+              value={planEnabled}
+              onValueChange={handlePlanToggle}
+              trackColor={{ false: '#374151', true: theme.accent }}
+              thumbColor={planEnabled ? '#FFFFFF' : '#9CA3AF'}
+              ios_backgroundColor="#374151"
+            />
+          </View>
+          {!planEnabled && (
+            <Text style={[styles.toggleWarning, { color: '#F59E0B' }]}>
+              ⚠️ Enable to start tracking with your water bottle hardware
+            </Text>
+          )}
+        </View>
+
         {/* Notification Toggle Switch */}
         <View style={[styles.toggleCard, { backgroundColor: theme.secondary }]}>
           <View style={styles.toggleRow}>
@@ -557,6 +771,7 @@ export default function HealthyHydrationPlan() {
               trackColor={{ false: '#374151', true: theme.accent }}
               thumbColor={notificationsEnabled ? '#FFFFFF' : '#9CA3AF'}
               ios_backgroundColor="#374151"
+              disabled={!planEnabled}
             />
           </View>
           {!notificationsAvailable && (
@@ -571,8 +786,8 @@ export default function HealthyHydrationPlan() {
           )}
         </View>
 
-        {/* Countdown Timer Card - Only show if notifications enabled */}
-        {notificationsEnabled && notificationsScheduled && nextReminderTime && (
+        {/* Countdown Timer Card - Only show if plan enabled and notifications enabled */}
+        {planEnabled && notificationsEnabled && notificationsScheduled && nextReminderTime && timeUntilNext && (
           <View style={[styles.countdownCard, { backgroundColor: theme.accent }]}>
             <Text style={styles.countdownTitle}>⏰ Next Reminder In:</Text>
             <Text style={styles.countdownTime}>{timeUntilNext}</Text>
@@ -586,12 +801,17 @@ export default function HealthyHydrationPlan() {
         <View style={styles.inputGroup}>
           <Text style={[styles.label, { color: theme.secondaryText }]}>Daily Water Goal (ML)</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: theme.secondary, color: theme.primaryText }]}
+            style={[styles.input, {
+              backgroundColor: theme.secondary,
+              color: theme.primaryText,
+              opacity: planEnabled ? 1 : 0.5
+            }]}
             onChangeText={(text) => setDailyGoal(text)}
             value={dailyGoal}
             keyboardType="numeric"
             placeholder="Enter your goal (e.g., 3000)"
             placeholderTextColor="#6B7280"
+            editable={planEnabled}
           />
         </View>
 
@@ -604,12 +824,18 @@ export default function HealthyHydrationPlan() {
                 key={gap}
                 style={[
                   styles.gapButton,
-                  { backgroundColor: reminderGap === gap ? theme.accent : theme.secondary },
+                  {
+                    backgroundColor: reminderGap === gap ? theme.accent : theme.secondary,
+                    opacity: planEnabled ? 1 : 0.5
+                  },
                 ]}
                 onPress={() => {
-                  setReminderGap(gap);
-                  setCustomGap('');
+                  if (planEnabled) {
+                    setReminderGap(gap);
+                    setCustomGap('');
+                  }
                 }}
+                disabled={!planEnabled}
               >
                 <Text style={[styles.gapText, { color: theme.primaryText }]}>{gap} hrs</Text>
               </TouchableOpacity>
@@ -623,6 +849,7 @@ export default function HealthyHydrationPlan() {
                   color: theme.primaryText,
                   borderColor: reminderGap > 4 ? theme.accent : '#374151',
                   borderWidth: 1,
+                  opacity: planEnabled ? 1 : 0.5
                 }
               ]}
               onChangeText={handleCustomGap}
@@ -630,46 +857,58 @@ export default function HealthyHydrationPlan() {
               keyboardType="numeric"
               placeholder="Custom"
               placeholderTextColor="#6B7280"
+              editable={planEnabled}
             />
           </View>
         </View>
 
-        {/* Real-Time Consumption Status - ALWAYS WORKS */}
-        <View style={[styles.realTimeCard, { backgroundColor: theme.secondary }]}>
-          <Text style={[styles.summaryTitle, { color: theme.primaryText }]}>
-            🔴 Live Hydration Progress
-          </Text>
-          <Text style={[styles.liveIndicator, { color: theme.accent }]}>
-            ● Real-time from your water bottle
-          </Text>
-
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { width: `${progressPercentage}%`, backgroundColor: goalAchieved ? theme.accent : theme.primary }]} />
-          </View>
-          <Text style={[styles.progressText, { color: theme.secondaryText, marginTop: 5 }]}>
-            {progressPercentage.toFixed(1)}% of Goal
-          </Text>
-
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Total Consumed Today:</Text>
-            <Text style={[styles.summaryValue, { color: goalAchieved ? theme.accent : theme.primaryText }]}>
-              {totalConsumed} ml
+        {/* Real-Time Consumption Status - ONLY WHEN PLAN IS ENABLED */}
+        {planEnabled ? (
+          <View style={[styles.realTimeCard, { backgroundColor: theme.secondary }]}>
+            <Text style={[styles.summaryTitle, { color: theme.primaryText }]}>
+              🔴 Live Hydration Progress
             </Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Daily Goal:</Text>
-            <Text style={[styles.summaryValue, { color: theme.accent }]}>
-              {currentGoal > 0 ? currentGoal : '--'} ml
+            <Text style={[styles.liveIndicator, { color: theme.accent }]}>
+              ● Real-time from your water bottle hardware
             </Text>
-          </View>
 
-          {goalAchieved && (
-            <View style={styles.achievementBanner}>
-              <Text style={styles.achievementEmoji}>🎉</Text>
-              <Text style={styles.achievementText}>Goal Achieved!</Text>
+            <View style={styles.progressContainer}>
+              <View style={[styles.progressBar, { width: `${progressPercentage}%`, backgroundColor: goalAchieved ? theme.accent : theme.primary }]} />
             </View>
-          )}
-        </View>
+            <Text style={[styles.progressText, { color: theme.secondaryText, marginTop: 5 }]}>
+              {progressPercentage.toFixed(1)}% of Goal
+            </Text>
+
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Total Consumed Today:</Text>
+              <Text style={[styles.summaryValue, { color: goalAchieved ? theme.accent : theme.primaryText }]}>
+                {totalConsumed} ml
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>Daily Goal:</Text>
+              <Text style={[styles.summaryValue, { color: theme.accent }]}>
+                {currentGoal > 0 ? currentGoal : '--'} ml
+              </Text>
+            </View>
+
+            {goalAchieved && (
+              <View style={styles.achievementBanner}>
+                <Text style={styles.achievementEmoji}>🎉</Text>
+                <Text style={styles.achievementText}>Goal Achieved!</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={[styles.disabledCard, { backgroundColor: theme.secondary }]}>
+            <Text style={[styles.disabledTitle, { color: theme.secondaryText }]}>
+              ⏸️ Hardware Tracking Disabled
+            </Text>
+            <Text style={[styles.disabledText, { color: theme.secondaryText }]}>
+              Enable your plan above to start tracking with your water bottle hardware
+            </Text>
+          </View>
+        )}
 
         {/* Calculated Plan Summary */}
         <View style={[styles.summaryCard, { backgroundColor: theme.secondary, marginTop: 20 }]}>
@@ -696,9 +935,15 @@ export default function HealthyHydrationPlan() {
           </View>
 
           <TouchableOpacity
-            style={[styles.saveButton, { backgroundColor: theme.accent, opacity: (dailyGoal && parseFloat(dailyGoal) > 0) ? 1 : 0.5 }]}
+            style={[
+              styles.saveButton,
+              {
+                backgroundColor: theme.accent,
+                opacity: (planEnabled && dailyGoal && parseFloat(dailyGoal) > 0) ? 1 : 0.5
+              }
+            ]}
             onPress={handleSave}
-            disabled={isSaving || !dailyGoal || parseFloat(dailyGoal) <= 0}
+            disabled={isSaving || !planEnabled || !dailyGoal || parseFloat(dailyGoal) <= 0}
           >
             {isSaving ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -762,6 +1007,9 @@ const styles = StyleSheet.create({
   inputCustom: { flex: 1, height: 50, borderRadius: 8, paddingHorizontal: 15, fontSize: 16, textAlign: 'center' },
   summaryCard: { padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#374151' },
   realTimeCard: { padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#374151', marginBottom: 10 },
+  disabledCard: { padding: 30, borderRadius: 12, borderWidth: 1, borderColor: '#374151', marginBottom: 10, alignItems: 'center' },
+  disabledTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  disabledText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   summaryTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   liveIndicator: { fontSize: 12, fontWeight: '600', marginBottom: 15 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#374151', marginBottom: 5 },

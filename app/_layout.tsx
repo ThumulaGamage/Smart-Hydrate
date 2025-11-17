@@ -1,6 +1,4 @@
  // app/_layout.tsx
-import { useState } from "react";
-import { Stack } from "expo-router";
 import { useState, useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { UserProvider } from "../context/UserDetailContext";

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getDatabase } from 'firebase/database';
+import { getDatabase, ref, onValue } from 'firebase/database';
 
 // Import auth from your existing Firebase config
 import { auth } from '../../config/firebaseConfig';
@@ -27,14 +27,14 @@ try {
 
 // --- Global Context & Utilities (EXPORTED for HealthyHydrationPlan.jsx) ---
 export const theme = {
-  primary: '#1D4ED8', // Indigo 700
-  secondary: '#1F2937', // Gray 800
-  background: '#0F172A', // Slate 900
-  card: '#1F2937', // Gray 800
+  primary: '#1D4ED8',
+  secondary: '#1F2937',
+  background: '#0F172A',
+  card: '#1F2937',
   primaryText: '#FFFFFF',
-  secondaryText: '#D1D5DB', // Gray 300
-  accent: '#0D9488', // Teal 600
-  danger: '#DC2626', // Red 600
+  secondaryText: '#D1D5DB',
+  accent: '#0D9488',
+  danger: '#DC2626',
 };
 
 export const AVAILABLE_GAPS = [2, 3, 4];
@@ -53,7 +53,6 @@ const useFirebaseAuth = () => {
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    // Use existing auth from firebaseConfig
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
         currentUserId = user.uid;
@@ -79,13 +78,98 @@ const useFirebaseAuth = () => {
 // --- Main App Component (Tab Navigator) ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('Healthy');
+  const [userId, setUserId] = useState(null);
+  const [healthyPlanActive, setHealthyPlanActive] = useState(false);
+  const [diseasePlanActive, setDiseasePlanActive] = useState(false);
   const authLoading = useFirebaseAuth();
+
+  // Listen to user authentication
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setUserId(user.uid);
+        checkActivePlans(user.uid);
+      } else {
+        setUserId(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Check which plans are active
+  const checkActivePlans = (uid) => {
+    // Check healthy plan
+    const healthyRef = ref(database, `users/${uid}/profile`);
+    onValue(healthyRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setHealthyPlanActive(data.planEnabled === true && data.dailyGoal > 0);
+      } else {
+        setHealthyPlanActive(false);
+      }
+    });
+
+    // Check disease plan
+    const diseaseRef = ref(database, `users/${uid}/diseaseProfile`);
+    onValue(diseaseRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setDiseasePlanActive(data.planEnabled === true && data.dailyGoal > 0);
+      } else {
+        setDiseasePlanActive(false);
+      }
+    });
+  };
+
+  // Handle tab change with conflict detection
+  const handleTabChange = (tab) => {
+    if (tab === 'Disease' && healthyPlanActive) {
+      Alert.alert(
+        "⚠️ Healthy Plan Active",
+        "You have an active Healthy Hydration Plan. Only one plan can be active at a time.\n\nWould you like to disable your Healthy plan before enabling the Disease plan?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch to Disease Plan",
+            onPress: () => setActiveTab(tab)
+          }
+        ]
+      );
+    } else if (tab === 'Healthy' && diseasePlanActive) {
+      Alert.alert(
+        "⚠️ Disease Plan Active",
+        "You have an active Disease Hydration Plan. Only one plan can be active at a time.\n\nWould you like to disable your Disease plan before enabling the Healthy plan?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch to Healthy Plan",
+            onPress: () => setActiveTab(tab)
+          }
+        ]
+      );
+    } else {
+      setActiveTab(tab);
+    }
+  };
 
   return (
     <View style={[styles.appContainer, { backgroundColor: theme.background }]}>
       {/* Header / Title */}
       <View style={styles.header}>
         <Text style={[styles.appTitle, { color: theme.primaryText }]}>Customize Hydration</Text>
+
+        {/* Active Plan Indicator */}
+        {(healthyPlanActive || diseasePlanActive) && (
+          <View style={[styles.activeIndicator, {
+            backgroundColor: healthyPlanActive ? 'rgba(13, 148, 136, 0.2)' : 'rgba(220, 38, 38, 0.2)'
+          }]}>
+            <Text style={styles.activeIndicatorText}>
+              {healthyPlanActive && '💚 Healthy Plan Active'}
+              {diseasePlanActive && '❤️ Disease Plan Active'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Tab Navigation */}
@@ -95,12 +179,13 @@ export default function App() {
             styles.tabButton,
             { borderBottomColor: activeTab === 'Healthy' ? theme.accent : 'transparent' }
           ]}
-          onPress={() => setActiveTab('Healthy')}
+          onPress={() => handleTabChange('Healthy')}
         >
           <Ionicons name="heart" size={20} color={activeTab === 'Healthy' ? theme.accent : theme.secondaryText} />
           <Text style={[styles.tabText, { color: activeTab === 'Healthy' ? theme.accent : theme.secondaryText }]}>
             Healthy People
           </Text>
+          {healthyPlanActive && <View style={[styles.activeDot, { backgroundColor: theme.accent }]} />}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -108,12 +193,13 @@ export default function App() {
             styles.tabButton,
             { borderBottomColor: activeTab === 'Disease' ? theme.danger : 'transparent' }
           ]}
-          onPress={() => setActiveTab('Disease')}
+          onPress={() => handleTabChange('Disease')}
         >
           <Ionicons name="medkit" size={20} color={activeTab === 'Disease' ? theme.danger : theme.secondaryText} />
           <Text style={[styles.tabText, { color: activeTab === 'Disease' ? theme.danger : theme.secondaryText }]}>
             People with Disease
           </Text>
+          {diseasePlanActive && <View style={[styles.activeDot, { backgroundColor: theme.danger }]} />}
         </TouchableOpacity>
       </View>
 
@@ -150,6 +236,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  activeIndicator: {
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  activeIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: theme.secondary,
@@ -163,11 +260,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 15,
     borderBottomWidth: 3,
+    position: 'relative',
   },
   tabText: {
     marginLeft: 8,
     fontSize: 14,
     fontWeight: '600',
+  },
+  activeDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   contentArea: {
     flex: 1,
