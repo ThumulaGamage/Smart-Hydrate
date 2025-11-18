@@ -7,14 +7,12 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
-  ActivityIndicator,
-  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../Theme/theme';
 import { auth, WaterBottleService } from '../../config/firebaseConfig';
-import bleService from '../../services/BLEService';
 
 // Graceful notification import
 let Notifications = null;
@@ -51,19 +49,10 @@ try {
 
 export default function NotificationTab() {
   const theme = useTheme();
-  
-  // State declarations
+
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [sensorData, setSensorData] = useState({
-    waterLevel: 0,
-    temperature: 0,
-    lastDrink: null,
-    isConnected: false
-  });
 
   // Healthy hydration settings
   const [healthyEnabled, setHealthyEnabled] = useState(true);
@@ -177,179 +166,6 @@ export default function NotificationTab() {
       unsubscribeDisease();
     };
   }, [userId]);
-
-  // Initialize notifications and sensor data
-  useEffect(() => {
-    if (userId) {
-      initializeNotifications();
-    }
-  }, [userId]);
-
-  const initializeNotifications = async () => {
-    try {
-      if (auth.currentUser) {
-        const service = new WaterBottleService(auth.currentUser.uid);
-        
-        const todayStats = await service.getTodayStats();
-        const latestReading = await service.getLatestReading();
-        
-        let updatedSensorData = { ...sensorData };
-        
-        if (latestReading && latestReading.length > 0) {
-          const reading = latestReading[0];
-          updatedSensorData = {
-            waterLevel: reading.waterLevel || 0,
-            temperature: reading.temperature || 0,
-            lastDrink: reading.timestamp?.toDate ? reading.timestamp.toDate() : null,
-            isConnected: bleService.isConnected || false
-          };
-          setSensorData(updatedSensorData);
-        }
-
-        generateNotifications(todayStats, updatedSensorData);
-      }
-    } catch (error) {
-      console.error('Failed to initialize notifications:', error);
-    }
-  };
-
-  const generateNotifications = (todayStats, currentSensorData) => {
-    const newNotifications = [];
-    const now = Date.now();
-
-    // Water Level Notifications
-    if (currentSensorData.waterLevel < 25) {
-      newNotifications.push({
-        id: 'low-water',
-        type: 'critical',
-        icon: 'water',
-        title: 'Bottle Running Low',
-        message: 'Your bottle is running low! Time for a refill.',
-        timestamp: new Date(),
-        priority: 'high',
-        actionable: true,
-        action: 'refill'
-      });
-    } else if (currentSensorData.waterLevel < 50) {
-      newNotifications.push({
-        id: 'half-water',
-        type: 'warning',
-        icon: 'water-outline',
-        title: 'Water Level Medium',
-        message: 'Your bottle is half empty. Consider refilling soon.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: false
-      });
-    }
-
-    // Temperature Notifications
-    if (currentSensorData.temperature > 30) {
-      newNotifications.push({
-        id: 'warm-water',
-        type: 'warning',
-        icon: 'thermometer-outline',
-        title: 'Water Temperature High',
-        message: 'Water is quite warm. Consider adding ice for better taste.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: false
-      });
-    } else if (currentSensorData.temperature < 10) {
-      newNotifications.push({
-        id: 'cold-water',
-        type: 'info',
-        icon: 'snow-outline',
-        title: 'Refreshingly Cold',
-        message: 'Your water is nice and cold! Perfect for hydration.',
-        timestamp: new Date(),
-        priority: 'low',
-        actionable: false
-      });
-    }
-
-    // Hydration Reminder
-    if (currentSensorData.lastDrink && (now - currentSensorData.lastDrink) > 3600000) {
-      newNotifications.push({
-        id: 'drink-reminder',
-        type: 'critical',
-        icon: 'time-outline',
-        title: 'Hydration Reminder',
-        message: "It's been over an hour since your last drink. Stay hydrated!",
-        timestamp: new Date(),
-        priority: 'high',
-        actionable: true,
-        action: 'drink'
-      });
-    }
-
-    // Goal Progress Notifications
-    if (todayStats && todayStats.goal > 0) {
-      const progressPercent = (todayStats.totalConsumed / todayStats.goal) * 100;
-      
-      if (progressPercent >= 100) {
-        newNotifications.push({
-          id: 'goal-achieved',
-          type: 'success',
-          icon: 'checkmark-circle',
-          title: 'Goal Achieved! 🎉',
-          message: "Congratulations! You've reached your daily hydration goal!",
-          timestamp: new Date(),
-          priority: 'high',
-          actionable: false
-        });
-      } else if (progressPercent >= 75 && progressPercent < 100) {
-        newNotifications.push({
-          id: 'almost-there',
-          type: 'info',
-          icon: 'trending-up',
-          title: 'Almost There!',
-          message: `You're ${progressPercent.toFixed(0)}% towards your goal. Keep it up!`,
-          timestamp: new Date(),
-          priority: 'medium',
-          actionable: false
-        });
-      } else if (progressPercent < 25) {
-        newNotifications.push({
-          id: 'low-progress',
-          type: 'warning',
-          icon: 'alert-circle-outline',
-          title: 'Low Daily Progress',
-          message: 'You haven\'t consumed much water today. Remember to stay hydrated!',
-          timestamp: new Date(),
-          priority: 'medium',
-          actionable: true,
-          action: 'drink'
-        });
-      }
-    }
-
-    // Connection Status
-    if (!bleService.isConnected) {
-      newNotifications.push({
-        id: 'disconnected',
-        type: 'warning',
-        icon: 'bluetooth-outline',
-        title: 'Bottle Disconnected',
-        message: 'Your smart bottle is not connected. Connect to track your hydration.',
-        timestamp: new Date(),
-        priority: 'medium',
-        actionable: true,
-        action: 'connect'
-      });
-    }
-
-    // Sort by priority and timestamp
-    newNotifications.sort((a, b) => {
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      }
-      return b.timestamp.getTime() - a.timestamp.getTime();
-    });
-
-    setNotifications(newNotifications);
-  };
 
   // Countdown timers
   useEffect(() => {
@@ -1109,7 +925,7 @@ const styles = StyleSheet.create({
   toggleHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   toggleInfo: {
     flex: 1,
@@ -1226,76 +1042,5 @@ const styles = StyleSheet.create({
   helpText: {
     fontSize: 13,
     lineHeight: 20,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyMessage: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  notificationCard: {
-    borderRadius: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
-  },
-  notificationContent: {
-    flexDirection: 'row',
-    padding: 16,
-    alignItems: 'flex-start',
-  },
-  iconContainer: {
-    marginRight: 12,
-    marginTop: 2,
-  },
-  textContainer: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  notificationMessage: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  timestamp: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  dismissButton: {
-    padding: 4,
-  },
-  notificationActionContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 0,
-  },
-  notificationActionButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  actionText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
