@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext'; // Use our new AuthContext
 import { useUser } from '../context/UserDetailContext';
 import Colors from '../constant/Colors';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 export default function AuthGuard({ children }) {
-  const { isAuthenticated, loading } = useUser();
+  const { user, isLoading: authLoading } = useAuth(); // Use AuthContext for auth state
+  const { loading: userLoading } = useUser();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
@@ -17,14 +19,17 @@ export default function AuthGuard({ children }) {
     accent: isDarkMode ? Colors.GREEN_LIGHT : Colors.GREEN_DARK,
   };
 
+  const loading = authLoading || userLoading;
+
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!authLoading && !user) {
       // Prevent redirect if already on auth page
       if (!router.pathname?.startsWith('/auth')) {
+        console.log('🔒 AuthGuard: No user, redirecting to sign in');
         router.replace('/auth/signIn');
       }
     }
-  }, [loading, isAuthenticated, router.pathname]);
+  }, [authLoading, user, router.pathname]);
 
   if (loading) {
     return (
@@ -45,7 +50,7 @@ export default function AuthGuard({ children }) {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return null; // Let the navigation handle the redirect
   }
 

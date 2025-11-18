@@ -6,13 +6,8 @@ import { AuthProvider, useAuth } from "../context/AuthContext";
 import LoadingScreen from "../components/loading";
 
 function RootLayoutNav() {
-return (
-<Stack screenOptions={{ headerShown: false }}>
-<Stack.Screen name="auth/signIn" />
-<Stack.Screen name="auth/signUp" />
-<Stack.Screen name="homepage" />
-</Stack>
-);
+
+
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -52,11 +47,7 @@ if (!isAppReady) {
 return <LoadingScreen onFinish={() => setIsAppReady(true)} />;
 }
 
-return (
-<UserProvider>
-<RootLayoutNav />
-</UserProvider>
-);
+
   if (!isAppReady) {
     return <LoadingScreen onFinish={() => setIsAppReady(true)} />;
   }

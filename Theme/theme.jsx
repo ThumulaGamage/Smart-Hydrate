@@ -14,6 +14,7 @@ const light = {
   background: '#FFFFFF',
   card: '#F5F5F5',
   primary: '#2196F3',
+  primary2: '#98d1ffff',
   icon: '#2196F3',
   secondary: ' #E3F2FD',
   text: 'rgba(0, 0, 0, 1)',

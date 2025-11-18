@@ -1,6 +1,3 @@
-// components/IntakeComponents.jsx
-// Updated version with real data integration and new user handling
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
@@ -11,11 +8,17 @@ import {
   ScrollView,
   StyleSheet
 } from 'react-native';
+// Import Svg components required for the circular chart
+import Svg, { Circle } from 'react-native-svg';
 import { BarChart } from 'react-native-chart-kit';
 import { MaterialIcons } from '@expo/vector-icons';
 import { WaterBottleService } from '../../config/firebaseConfig';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+// --- Circular Chart Constants (now dynamic inside component) ---
+const STROKE_WIDTH = 20;
+const CIRCLE_SIZE = 220;
 
 // Helper function for cross-platform card styles
 const getCardStyle = (theme) => ({
@@ -37,57 +40,58 @@ const getCardStyle = (theme) => ({
 });
 
 // =======================================================
-// 1. AUTO-TRACKING HYDRATION GOAL COMPONENT
+// 1. UPDATED HYDRATION GOAL CARD (REPLACED WITH YOUR DESIGN)
 // =======================================================
 export const HydrationGoalCard = ({ dailyStats, theme }) => {
-  const progress = Math.min((dailyStats.totalConsumed / dailyStats.goal) * 100, 100);
-  const remaining = Math.max(dailyStats.goal - dailyStats.totalConsumed, 0);
-  
-  const getProgressColor = (progress) => {
-    if (progress >= 100) return '#4CAF50';
-    if (progress >= 75) return '#8BC34A';
-    if (progress >= 50) return '#FFC107';
-    if (progress >= 25) return '#FF9800';
-    return '#FF5722';
+  const consumed = dailyStats.totalConsumed || 0;
+  const goal = dailyStats.goal || 2500;
+  const isNewUser = dailyStats.isNewUser && consumed === 0;
+
+  // Calculate percentage
+  const percentage = Math.min(Math.round((consumed / goal) * 100), 100);
+  const remaining = Math.max(goal - consumed, 0);
+
+  // Determine color based on progress
+  const getProgressColor = () => {
+    if (percentage >= 100) return '#27ae60'; // Green - Goal achieved
+    if (percentage >= 75) return '#3498db';  // Blue - Good progress
+    if (percentage >= 50) return '#f39c12';  // Orange - Half way
+    return '#e74c3c'; // Red - Need more water
   };
 
-  // Show new user state
-  if (dailyStats.isNewUser && dailyStats.totalConsumed === 0) {
+  const progressColor = getProgressColor();
+
+  // Get motivational message
+  const getMessage = () => {
+    if (percentage >= 100) return 'Goal Achieved! 🎉';
+    if (percentage >= 75) return 'Almost there! 💪';
+    if (percentage >= 50) return 'Keep going! 💧';
+    return 'Stay hydrated! 🚰';
+  };
+
+  // Circle calculations
+  const size = CIRCLE_SIZE;
+  const strokeWidth = STROKE_WIDTH;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progressOffset = circumference - (percentage / 100) * circumference;
+
+  // --- Empty State (New User) ---
+  if (isNewUser) {
     return (
-      <View style={[getCardStyle(theme), { borderWidth: 2, borderColor: theme?.border || '#E0E0E0', borderStyle: 'dashed' }]}>
-        {/* Header */}
-        <View style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16
-        }}>
-          <Text style={{
-            color: theme?.primary || '#1976D2',
-            fontSize: 18,
-            fontWeight: 'bold'
-          }}>
-            Daily Hydration Goal
-          </Text>
-        </View>
-        
-        {/* Empty state */}
-        <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+      <View style={[getCardStyle(theme), styles.emptyCard]}>
+        <Text style={[styles.title, { color: theme?.text || '#2c3e50' }]}>
+          Today's Progress
+        </Text>
+        <Text style={[styles.subtitle, { color: theme?.textMuted || '#7f8c8d' }]}>
+          Your daily hydration goal
+        </Text>
+        <View style={styles.emptyState}>
           <MaterialIcons name="local-drink" size={48} color={theme?.textMuted || '#BDBDBD'} />
-          <Text style={{
-            color: theme?.text || '#2c3e50',
-            fontSize: 20,
-            fontWeight: 'bold',
-            marginTop: 12,
-            marginBottom: 4
-          }}>
-            {dailyStats.goal}ml Goal Set
+          <Text style={[styles.emptyTextBold, { color: theme?.text || '#2c3e50' }]}>
+            {goal}ml Goal Set
           </Text>
-          <Text style={{
-            color: theme?.textMuted || '#7f8c8d',
-            fontSize: 14,
-            textAlign: 'center'
-          }}>
+          <Text style={[styles.emptyTextMuted, { color: theme?.textMuted || '#7f8c8d' }]}>
             Start drinking to begin tracking your progress
           </Text>
         </View>
@@ -95,142 +99,329 @@ export const HydrationGoalCard = ({ dailyStats, theme }) => {
     );
   }
 
+  // --- Progress State (Enhanced Circular Chart) ---
   return (
     <View style={getCardStyle(theme)}>
       {/* Header */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16
-      }}>
-        <Text style={{
-          color: theme?.primary || '#1976D2',
-          fontSize: 18,
-          fontWeight: 'bold'
-        }}>
-          Daily Hydration Goal
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme?.text || '#2c3e50' }]}>
+          Today's Progress
         </Text>
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: 'rgba(25, 118, 210, 0.1)',
-          paddingHorizontal: 8,
-          paddingVertical: 4,
-          borderRadius: 12
-        }}>
+        <View style={styles.badge}>
           <MaterialIcons name="sensors" size={14} color="#1976D2" />
-          <Text style={{
-            color: '#1976D2',
-            fontSize: 12,
-            marginLeft: 4
-          }}>
-            Auto-tracked
+          <Text style={styles.badgeText}>Auto-tracked</Text>
+        </View>
+      </View>
+      <Text style={[styles.subtitle, { color: theme?.textMuted || '#7f8c8d', marginBottom: 16 }]}>
+        Your daily hydration goal
+      </Text>
+
+      {/* Circular Progress Ring */}
+      <View style={styles.circleContainer}>
+        <Svg width={size} height={size}>
+          {/* Background Circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={theme?.textMuted || '#e0e0e0'}
+            strokeWidth={strokeWidth}
+            fill="none"
+            opacity={0.2}
+          />
+          
+          {/* Progress Circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={progressColor}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={progressOffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </Svg>
+
+        {/* Center Text */}
+        <View style={styles.centerTextContainer}>
+          <Text style={[styles.percentageText, { color: progressColor }]}>
+            {percentage}%
+          </Text>
+          <Text style={[styles.consumedText, { color: theme?.text || '#2c3e50' }]}>
+            {consumed}ml
+          </Text>
+          <Text style={[styles.goalText, { color: theme?.textMuted || '#7f8c8d' }]}>
+            of {goal}ml
           </Text>
         </View>
       </View>
-      
-      {/* Progress Stats */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'baseline',
-        marginBottom: 12
-      }}>
-        <Text style={{
-          color: getProgressColor(progress),
-          fontSize: 32,
-          fontWeight: 'bold'
-        }}>
-          {Math.round(dailyStats.totalConsumed)}ml
-        </Text>
-        <Text style={{
-          color: theme?.textMuted || '#7f8c8d',
-          fontSize: 16
-        }}>
-          of {dailyStats.goal}ml
-        </Text>
-      </View>
-      
-      {/* Progress Bar */}
-      <View style={{
-        backgroundColor: theme?.background || '#E3F2FD',
-        height: 20,
-        borderRadius: 10,
-        marginBottom: 12,
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <View style={{
-          width: `${progress}%`,
-          backgroundColor: getProgressColor(progress),
-          height: '100%',
-          borderRadius: 10,
-        }} />
-        <View style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}>
-          <Text style={{
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: 'white',
-            textShadowColor: 'rgba(0,0,0,0.3)',
-            textShadowOffset: { width: 1, height: 1 },
-            textShadowRadius: 2,
-          }}>
-            {Math.round(progress)}%
-          </Text>
+
+      {/* Stats Cards */}
+      <View style={styles.statsContainer}>
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#3498db' }]}>{consumed}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Consumed</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#e74c3c' }]}>{remaining}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Remaining</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme?.background || '#F8F9FA' }]}>
+          <Text style={[styles.statValue, { color: '#27ae60' }]}>{goal}ml</Text>
+          <Text style={[styles.statLabel, { color: theme?.textMuted || '#7f8c8d' }]}>Daily Goal</Text>
         </View>
       </View>
-      
-      {/* Status and Remaining */}
-      <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <Text style={{
-          color: theme?.textMuted || '#7f8c8d',
-          fontSize: 14
-        }}>
-          {remaining > 0 ? `${remaining}ml remaining` : 'Goal achieved!'}
+
+      {/* Motivational Message */}
+      <View style={[styles.messageContainer, { backgroundColor: progressColor + '20' }]}>
+        <Text style={[styles.messageText, { color: progressColor }]}>
+          {getMessage()}
         </Text>
-        
-        {progress >= 100 && (
-          <View style={{
-            backgroundColor: '#4CAF50',
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            borderRadius: 12
-          }}>
-            <Text style={{
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 'bold'
-            }}>
-              COMPLETE
-            </Text>
-          </View>
-        )}
+      </View>
+
+      {/* Progress Milestones */}
+      <View style={styles.milestonesContainer}>
+        <Text style={[styles.milestonesTitle, { color: theme?.text || '#2c3e50' }]}>
+          Progress Milestones
+        </Text>
+        <View style={styles.milestones}>
+          {[
+            { percent: 25, label: 'Good Start', achieved: percentage >= 25 },
+            { percent: 50, label: 'Halfway', achieved: percentage >= 50 },
+            { percent: 75, label: 'Almost There', achieved: percentage >= 75 },
+            { percent: 100, label: 'Goal!', achieved: percentage >= 100 },
+          ].map((milestone) => (
+            <View key={milestone.percent} style={styles.milestone}>
+              <View
+                style={[
+                  styles.milestoneCircle,
+                  {
+                    backgroundColor: milestone.achieved
+                      ? progressColor
+                      : theme?.textMuted || '#e0e0e0',
+                  },
+                ]}
+              >
+                <Text style={styles.milestonePercent}>
+                  {milestone.achieved ? '✓' : milestone.percent}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.milestoneLabel,
+                  {
+                    color: milestone.achieved ? theme?.text : theme?.textMuted,
+                    fontWeight: milestone.achieved ? '600' : '400',
+                  },
+                ]}
+              >
+                {milestone.label}
+              </Text>
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
 };
 
 // =======================================================
-// 2. ENHANCED SCROLLABLE BAR CHART COMPONENT
+// STYLESHEET (MERGED & UPDATED)
 // =======================================================
-export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
-  const [chartType, setChartType] = useState('weekly');
+const styles = StyleSheet.create({
+  // Card States
+  emptyCard: {
+    borderWidth: 2, 
+    borderColor: '#E0E0E0', 
+    borderStyle: 'dashed' 
+  },
+  
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    fontSize: 14,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(25, 118, 210, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12
+  },
+  badgeText: {
+    color: '#1976D2',
+    fontSize: 12,
+    marginLeft: 4
+  },
+
+  // Empty State
+  emptyState: { 
+    alignItems: 'center', 
+    paddingVertical: 20 
+  },
+  emptyTextBold: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    marginTop: 12, 
+    marginBottom: 4 
+  },
+  emptyTextMuted: { 
+    fontSize: 14, 
+    textAlign: 'center' 
+  },
+
+  // Circular Progress
+  circleContainer: {
+    marginVertical: 20,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerTextContainer: {
+    position: 'absolute',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  percentageText: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  consumedText: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  goalText: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+
+  // Stats Cards
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 24,
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    opacity: 0.7,
+  },
+
+  // Motivational Message
+  messageContainer: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  messageText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Milestones
+  milestonesContainer: {
+    width: '100%',
+    marginTop: 24,
+  },
+  milestonesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  milestones: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  milestone: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  milestoneCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  milestonePercent: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  milestoneLabel: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
+
+  // --- WeeklyChart & DrinkingStats styles (from original) ---
+  barChartContainer: { 
+    marginVertical: 16 
+  },
+  completeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  completeBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold'
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  footerText: {
+    fontSize: 14,
+  },
+});
+
+// =======================================================
+// ENHANCED SCROLLABLE BAR CHART COMPONENT (DAILY DEFAULT + MONTHLY)
+// =======================================================
+export const WeeklyChart = ({ weeklyData, dailyStats, monthlyData, theme }) => {
+  const [chartType, setChartType] = useState('daily'); // Default to daily view
   
   // Safe data handling
   const safeWeeklyData = useMemo(() => weeklyData || [], [weeklyData]);
+  const safeMonthlyData = useMemo(() => monthlyData || [], [monthlyData]);
   
   // Check if user is new or has no real data
   const isNewUser = useMemo(() => {
@@ -246,12 +437,23 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
     return Math.round(total / safeWeeklyData.length);
   }, [safeWeeklyData]);
 
-  // Generate daily chart data (last 24 hours with hourly breakdown)
+  // Calculate monthly average and total
+  const monthlyStats = useMemo(() => {
+    if (safeMonthlyData.length === 0) return { average: 0, total: 0 };
+    
+    const total = safeMonthlyData.reduce((sum, week) => sum + (week.totalConsumed || 0), 0);
+    const average = Math.round(total / safeMonthlyData.length);
+    
+    return { average, total };
+  }, [safeMonthlyData]);
+
+  // Generate daily chart data with hourly breakdown
   const dailyChartData = useMemo(() => {
     if (!dailyStats.sessions || dailyStats.sessions.length === 0) {
+      // Return empty data for all 24 hours
       return {
-        labels: ['Night', 'Morning', 'Afternoon', 'Evening'],
-        data: [0, 0, 0, 0]
+        labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+        data: new Array(24).fill(0)
       };
     }
 
@@ -268,33 +470,19 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
       }
     });
 
-    // Group into 6-hour periods for better visualization
-    const groupedData = [
-      hourlyData.slice(0, 6).reduce((a, b) => a + b, 0),    // 12AM-6AM
-      hourlyData.slice(6, 12).reduce((a, b) => a + b, 0),   // 6AM-12PM
-      hourlyData.slice(12, 18).reduce((a, b) => a + b, 0),  // 12PM-6PM
-      hourlyData.slice(18, 24).reduce((a, b) => a + b, 0)   // 6PM-12AM
-    ];
-
     return {
-      labels: ['Night', 'Morning', 'Afternoon', 'Evening'],
-      data: groupedData
+      labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+      data: hourlyData
     };
   }, [dailyStats.sessions]);
 
-  // Enhanced chart configuration
+  // Enhanced chart configuration - ALL BLUE COLORS
   const chartConfig = {
     backgroundColor: 'transparent',
     backgroundGradientFrom: theme?.card || 'white',
     backgroundGradientTo: theme?.card || 'white',
     decimalPlaces: 0,
-    color: (opacity = 1) => {
-      if (chartType === 'weekly') {
-        return `rgba(25, 118, 210, ${opacity})`;
-      } else {
-        return `rgba(255, 152, 0, ${opacity})`;
-      }
-    },
+    color: (opacity = 1) => `rgba(25, 118, 210, ${opacity})`, // Always blue
     labelColor: (opacity = 1) => theme?.text || `rgba(0, 0, 0, ${opacity})`,
     style: {
       borderRadius: 16,
@@ -304,8 +492,8 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
       strokeWidth: 1,
       stroke: theme?.border || 'rgba(0,0,0,0.08)',
     },
-    barPercentage: 0.7,
-    fillShadowGradient: chartType === 'weekly' ? '#1976D2' : '#FF9800',
+    barPercentage: chartType === 'monthly' ? 0.5 : 0.6,
+    fillShadowGradient: '#1976D2', // Always blue
     fillShadowGradientOpacity: 1,
     useShadowColorFromDataset: false,
     strokeWidth: 0,
@@ -314,7 +502,8 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
   // Render chart based on selected type
   const renderChart = () => {
     // Show empty state for new users
-    if (isNewUser || (chartType === 'weekly' && safeWeeklyData.length === 0)) {
+    if ((chartType === 'weekly' && (isNewUser || safeWeeklyData.length === 0)) ||
+        (chartType === 'monthly' && safeMonthlyData.length === 0)) {
       return (
         <View style={{
           backgroundColor: theme?.background || '#F5F5F5',
@@ -335,7 +524,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
             marginTop: 12,
             textAlign: 'center'
           }}>
-            No Data Yet
+            {chartType === 'weekly' ? 'No Weekly Data Yet' : 'No Monthly Data Yet'}
           </Text>
           <Text style={{
             color: theme?.textMuted || '#757575',
@@ -343,7 +532,10 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
             marginTop: 4,
             textAlign: 'center'
           }}>
-            Charts will appear after you start tracking
+            {chartType === 'weekly' 
+              ? 'Weekly charts will appear after you track for multiple days'
+              : 'Monthly charts will appear after you track for multiple weeks'
+            }
           </Text>
         </View>
       );
@@ -352,19 +544,19 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
     if (chartType === 'daily' && (!dailyStats.sessions || dailyStats.sessions.length === 0)) {
       return (
         <View style={{
-          backgroundColor: theme?.background || '#FFF3E0',
+          backgroundColor: theme?.background || '#E3F2FD',
           alignItems: 'center',
           justifyContent: 'center',
           height: 220,
           borderRadius: 16,
           marginVertical: 16,
           borderWidth: 2,
-          borderColor: '#FFE0B2',
+          borderColor: '#BBDEFB',
           borderStyle: 'dashed'
         }}>
-          <MaterialIcons name="local-drink" size={64} color="#FFB74D" />
+          <MaterialIcons name="local-drink" size={64} color="#64B5F6" />
           <Text style={{
-            color: '#FF9800',
+            color: '#1976D2',
             fontSize: 16,
             fontWeight: '600',
             marginTop: 12,
@@ -378,7 +570,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
             marginTop: 4,
             textAlign: 'center'
           }}>
-            Start drinking to see daily patterns
+            Start drinking to see today's hourly patterns
           </Text>
         </View>
       );
@@ -389,9 +581,10 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
     let chartAverage;
     let chartWidth;
     let chartIcon;
+    let chartValue;
 
     if (chartType === 'weekly') {
-      chartWidth = Math.max(320, safeWeeklyData.length * 60);
+      chartWidth = Math.max(400, safeWeeklyData.length * 60);
       
       chartData = {
         labels: safeWeeklyData.map(day => {
@@ -410,18 +603,46 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
       };
       chartTitle = 'Weekly Overview';
       chartAverage = weeklyAverage;
+      chartValue = `Avg: ${chartAverage}ml`;
       chartIcon = 'date-range';
-    } else {
-      chartWidth = 320;
+    } 
+    else if (chartType === 'monthly') {
+      chartWidth = Math.max(500, safeMonthlyData.length * 50);
       
       chartData = {
-        labels: dailyChartData.labels,
+        labels: safeMonthlyData.map(week => {
+          try {
+            const startDate = new Date(week.startDate);
+            const endDate = new Date(week.endDate);
+            return `${startDate.getDate()}-${endDate.getDate()}`;
+          } catch (e) {
+            return 'N/A';
+          }
+        }),
+        datasets: [{
+          data: safeMonthlyData.map(week => week.totalConsumed || 0),
+        }]
+      };
+      chartTitle = 'Monthly Overview';
+      chartAverage = monthlyStats.average;
+      chartValue = `Avg: ${chartAverage}ml`;
+      chartIcon = 'calendar-today';
+    }
+    else { // Daily
+      chartWidth = Math.max(800, dailyChartData.labels.length * 35);
+      
+      chartData = {
+        labels: dailyChartData.labels.map((label, index) => {
+          // Show only every 3rd hour label to avoid crowding
+          return index % 3 === 0 ? label : '';
+        }),
         datasets: [{
           data: dailyChartData.data,
         }]
       };
-      chartTitle = 'Today\'s Pattern';
-      chartAverage = Math.round(dailyChartData.data.reduce((a, b) => a + b, 0) / 4);
+      chartTitle = 'Today\'s Hourly Intake';
+      chartAverage = Math.round(dailyChartData.data.reduce((a, b) => a + b, 0));
+      chartValue = `Total: ${chartAverage}ml`;
       chartIcon = 'schedule';
     }
 
@@ -439,10 +660,10 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
             <MaterialIcons 
               name={chartIcon} 
               size={20} 
-              color={theme?.primary || (chartType === 'weekly' ? '#1976D2' : '#FF9800')} 
+              color="#1976D2" // Always blue
             />
             <Text style={{
-              color: theme?.primary || (chartType === 'weekly' ? '#1976D2' : '#FF9800'),
+              color: '#1976D2', // Always blue
               fontSize: 16,
               fontWeight: '700',
               marginLeft: 8
@@ -452,19 +673,19 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
           </View>
           
           <View style={{
-            backgroundColor: theme?.background || '#F8F9FA',
+            backgroundColor: '#E3F2FD', // Light blue background
             paddingHorizontal: 12,
             paddingVertical: 6,
             borderRadius: 20,
             borderWidth: 1,
-            borderColor: theme?.border || '#E9ECEF'
+            borderColor: '#BBDEFB' // Light blue border
           }}>
             <Text style={{
-              color: theme?.textMuted || '#6C757D',
+              color: '#1976D2', // Blue text
               fontSize: 12,
               fontWeight: '600'
             }}>
-              Avg: {chartAverage}ml
+              {chartValue}
             </Text>
           </View>
         </View>
@@ -489,13 +710,12 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
           <ScrollView 
             horizontal={true}
             showsHorizontalScrollIndicator={true}
-            scrollEnabled={chartWidth > (screenWidth - 60)}
+            scrollEnabled={true}
             style={{
               borderRadius: 12,
             }}
             contentContainerStyle={{
               paddingRight: 20,
-              paddingLeft: 4
             }}
           >
             <BarChart
@@ -515,7 +735,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
               withInnerLines={true}
               withVerticalLabels={true}
               withHorizontalLabels={true}
-              verticalLabelRotation={0}
+              verticalLabelRotation={chartType === 'monthly' ? -45 : -45}
               horizontalLabelRotation={0}
             />
           </ScrollView>
@@ -532,24 +752,28 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
           <View style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: theme?.background || '#F8F9FA',
+            backgroundColor: '#E3F2FD', // Light blue background
             paddingHorizontal: 12,
             paddingVertical: 6,
-            borderRadius: 16
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: '#BBDEFB'
           }}>
             <View style={{
               width: 12,
               height: 12,
               borderRadius: 6,
-              backgroundColor: chartType === 'weekly' ? '#1976D2' : '#FF9800',
+              backgroundColor: '#1976D2', // Blue dot
               marginRight: 8
             }} />
             <Text style={{
-              color: theme?.textMuted || '#6C757D',
+              color: '#1976D2', // Blue text
               fontSize: 12,
               fontWeight: '500'
             }}>
-              {chartType === 'weekly' ? 'Daily Intake (ml)' : 'Intake by Time Period (ml)'}
+              {chartType === 'weekly' ? 'Daily Intake (ml)' : 
+               chartType === 'monthly' ? 'Weekly Intake (ml)' : 
+               'Hourly Intake (ml)'}
             </Text>
           </View>
         </View>
@@ -565,7 +789,7 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
         alignItems: 'center',
         marginBottom: 8
       }}>
-        {/* Enhanced Chart Type Selector */}
+        {/* Enhanced Chart Type Selector - All Blue Theme with 3 options */}
         <View style={{
           flexDirection: 'row',
           backgroundColor: theme?.background || '#F0F0F0',
@@ -575,13 +799,38 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
           borderColor: theme?.border || '#E0E0E0'
         }}>
           <TouchableOpacity
+            onPress={() => setChartType('daily')}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 20,
+              backgroundColor: chartType === 'daily' 
+                ? '#1976D2' // Blue when active
+                : 'transparent',
+              shadowColor: chartType === 'daily' ? '#1976D2' : 'transparent',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.2,
+              shadowRadius: 4,
+              elevation: chartType === 'daily' ? 2 : 0,
+            }}
+          >
+            <Text style={{
+              color: chartType === 'daily' ? 'white' : theme?.textMuted || '#7f8c8d',
+              fontSize: 12,
+              fontWeight: '700'
+            }}>
+              Daily
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
             onPress={() => setChartType('weekly')}
             style={{
-              paddingHorizontal: 16,
+              paddingHorizontal: 12,
               paddingVertical: 8,
               borderRadius: 20,
               backgroundColor: chartType === 'weekly' 
-                ? theme?.primary || '#1976D2' 
+                ? '#1976D2' // Blue when active
                 : 'transparent',
               shadowColor: chartType === 'weekly' ? '#1976D2' : 'transparent',
               shadowOffset: { width: 0, height: 2 },
@@ -592,35 +841,35 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
           >
             <Text style={{
               color: chartType === 'weekly' ? 'white' : theme?.textMuted || '#7f8c8d',
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: '700'
             }}>
               Weekly
             </Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
-            onPress={() => setChartType('daily')}
+            onPress={() => setChartType('monthly')}
             style={{
-              paddingHorizontal: 16,
+              paddingHorizontal: 12,
               paddingVertical: 8,
               borderRadius: 20,
-              backgroundColor: chartType === 'daily' 
-                ? '#FF9800' 
+              backgroundColor: chartType === 'monthly' 
+                ? '#1976D2' // Blue when active
                 : 'transparent',
-              shadowColor: chartType === 'daily' ? '#FF9800' : 'transparent',
+              shadowColor: chartType === 'monthly' ? '#1976D2' : 'transparent',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.2,
               shadowRadius: 4,
-              elevation: chartType === 'daily' ? 2 : 0,
+              elevation: chartType === 'monthly' ? 2 : 0,
             }}
           >
             <Text style={{
-              color: chartType === 'daily' ? 'white' : theme?.textMuted || '#7f8c8d',
-              fontSize: 13,
+              color: chartType === 'monthly' ? 'white' : theme?.textMuted || '#7f8c8d',
+              fontSize: 12,
               fontWeight: '700'
             }}>
-              Daily
+              Monthly
             </Text>
           </TouchableOpacity>
         </View>
@@ -631,8 +880,9 @@ export const WeeklyChart = ({ weeklyData, dailyStats, theme }) => {
   );
 };
 
+
 // =======================================================
-// 3. DRINKING STATS COMPONENT
+// 3. DRINKING STATS COMPONENT (UNCHANGED)
 // =======================================================
 export const DrinkingStats = ({ dailyStats, sensorData, theme }) => {
   // Safe temperature display
@@ -772,7 +1022,7 @@ export const DrinkingStats = ({ dailyStats, sensorData, theme }) => {
 };
 
 // =======================================================
-// 4. REAL DATA INTEGRATION HOOK
+// 4. REAL DATA INTEGRATION HOOK (UNCHANGED)
 // =======================================================
 export const useIntakeService = (user) => {
   const [dailyStats, setDailyStats] = useState({

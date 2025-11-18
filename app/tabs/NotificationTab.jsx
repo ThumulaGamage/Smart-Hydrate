@@ -172,7 +172,6 @@ export default function NotificationTab() {
     if (!allNotificationsEnabled) return;
 
     const interval = setInterval(() => {
-      // Update healthy countdown
       if (healthyEnabled && healthyNextReminder) {
         const countdown = calculateCountdown(healthyNextReminder);
         setHealthyCountdown(countdown);
@@ -180,7 +179,6 @@ export default function NotificationTab() {
         setHealthyCountdown('');
       }
 
-      // Update disease countdown
       if (diseaseEnabled && diseaseNextReminder) {
         const countdown = calculateCountdown(diseaseNextReminder);
         setDiseaseCountdown(countdown);
@@ -205,19 +203,16 @@ export default function NotificationTab() {
     return `${hours}h ${minutes}m ${seconds}s`;
   };
 
-  // Calculate intake per reminder
   const calculateIntake = (goal, gap) => {
     if (!goal || !gap || goal <= 0 || gap <= 0) return 0;
     const numberOfReminders = Math.floor(WAKING_HOURS / gap);
     return Math.ceil((goal / numberOfReminders) / 10) * 10;
   };
 
-  // Schedule healthy hydration notifications
   const scheduleHealthyNotifications = async (gapHours, intakeAmount) => {
     if (!notificationsAvailable || !healthyEnabled || !allNotificationsEnabled) return false;
 
     try {
-      // Cancel existing healthy notifications
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       for (const notification of allScheduled) {
         if (notification.content.data?.type === 'hydration_reminder') {
@@ -264,12 +259,10 @@ export default function NotificationTab() {
     }
   };
 
-  // Schedule disease hydration notifications
   const scheduleDiseaseNotifications = async (gapHours, intakeAmount, conditionName) => {
     if (!notificationsAvailable || !diseaseEnabled || !allNotificationsEnabled) return false;
 
     try {
-      // Cancel existing disease notifications
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       for (const notification of allScheduled) {
         if (notification.content.data?.type === 'disease_hydration_reminder') {
@@ -317,18 +310,15 @@ export default function NotificationTab() {
     }
   };
 
-  // Handle master toggle
   const handleMasterToggle = async (value) => {
     setAllNotificationsEnabled(value);
 
     if (!value) {
-      // Turn off all notifications
       if (notificationsAvailable) {
         await Notifications.cancelAllScheduledNotificationsAsync();
         console.log('🔕 All notifications cancelled');
       }
 
-      // Update Firebase
       if (userId) {
         await update(ref(database, `users/${userId}/profile`), {
           notificationsEnabled: false,
@@ -352,7 +342,6 @@ export default function NotificationTab() {
     }
   };
 
-  // Handle healthy toggle
   const handleHealthyToggle = async (value) => {
     setHealthyEnabled(value);
 
@@ -362,7 +351,6 @@ export default function NotificationTab() {
       });
 
       if (!value && notificationsAvailable) {
-        // Cancel healthy notifications
         const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
         for (const notification of allScheduled) {
           if (notification.content.data?.type === 'hydration_reminder') {
@@ -371,14 +359,12 @@ export default function NotificationTab() {
         }
         setHealthyNextReminder(null);
       } else if (value && healthyGoal > 0) {
-        // Reschedule
         const intake = calculateIntake(healthyGoal, healthyGap);
         await scheduleHealthyNotifications(healthyGap, intake);
       }
     }
   };
 
-  // Handle disease toggle
   const handleDiseaseToggle = async (value) => {
     setDiseaseEnabled(value);
 
@@ -388,7 +374,6 @@ export default function NotificationTab() {
       });
 
       if (!value && notificationsAvailable) {
-        // Cancel disease notifications
         const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
         for (const notification of allScheduled) {
           if (notification.content.data?.type === 'disease_hydration_reminder') {
@@ -397,14 +382,12 @@ export default function NotificationTab() {
         }
         setDiseaseNextReminder(null);
       } else if (value && diseaseGoal > 0 && diseaseName) {
-        // Reschedule
         const intake = calculateIntake(diseaseGoal, diseaseGap);
         await scheduleDiseaseNotifications(diseaseGap, intake, diseaseName);
       }
     }
   };
 
-  // Reschedule all notifications
   const handleRescheduleAll = async () => {
     if (!notificationsAvailable || !allNotificationsEnabled) {
       Alert.alert("Notifications Disabled", "Please enable notifications first.");
@@ -418,14 +401,12 @@ export default function NotificationTab() {
 
     let scheduled = 0;
 
-    // Reschedule healthy
     if (healthyEnabled && healthyGoal > 0) {
       const intake = calculateIntake(healthyGoal, healthyGap);
       const success = await scheduleHealthyNotifications(healthyGap, intake);
       if (success) scheduled++;
     }
 
-    // Reschedule disease
     if (diseaseEnabled && diseaseGoal > 0 && diseaseName) {
       const intake = calculateIntake(diseaseGoal, diseaseGap);
       const success = await scheduleDiseaseNotifications(diseaseGap, intake, diseaseName);
@@ -447,11 +428,76 @@ export default function NotificationTab() {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await initializeNotifications();
+    setRefreshing(false);
+  };
+
+  const dismissNotification = (id) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  };
+
+  const getNotificationStyle = (type) => {
+    switch (type) {
+      case 'critical':
+        return {
+          borderColor: theme.error || '#f44336',
+          backgroundColor: `${theme.error || '#f44336'}15`
+        };
+      case 'warning':
+        return {
+          borderColor: theme.warning || '#FF9800',
+          backgroundColor: `${theme.warning || '#FF9800'}15`
+        };
+      case 'success':
+        return {
+          borderColor: theme.success || '#4CAF50',
+          backgroundColor: `${theme.success || '#4CAF50'}15`
+        };
+      case 'info':
+      default:
+        return {
+          borderColor: theme.primary || '#2196F3',
+          backgroundColor: `${theme.primary || '#2196F3'}15`
+        };
+    }
+  };
+
+  const getIconColor = (type) => {
+    switch (type) {
+      case 'critical':
+        return theme.error || '#f44336';
+      case 'warning':
+        return theme.warning || '#FF9800';
+      case 'success':
+        return theme.success || '#4CAF50';
+      case 'info':
+      default:
+        return theme.primary || '#2196F3';
+    }
+  };
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'Time unknown';
+    const now = new Date();
+    const diff = now - timestamp;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return timestamp.toLocaleDateString();
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.accent || '#0D9488'} />
-        <Text style={[styles.loadingText, { color: theme.text }]}>Loading notifications...</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary || '#2196F3'} />
+          <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+            Loading notifications...
+          </Text>
+        </View>
       </View>
     );
   }
@@ -460,13 +506,25 @@ export default function NotificationTab() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Ionicons name="lock-closed" size={64} color={theme.text} style={{ opacity: 0.3 }} />
-        <Text style={[styles.text, { color: theme.text, marginTop: 16 }]}>Please sign in to manage notifications</Text>
+        <Text style={[styles.text, { color: theme.text, marginTop: 16 }]}>
+          Please sign in to manage notifications
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={[styles.scrollContainer, { backgroundColor: theme.background }]}>
+    <ScrollView 
+      style={[styles.scrollContainer, { backgroundColor: theme.background }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={theme.primary}
+          colors={[theme.primary || '#2196F3']}
+        />
+      }
+    >
       <View style={styles.contentContainer}>
 
         {/* Header */}
@@ -645,6 +703,87 @@ export default function NotificationTab() {
           </View>
         </View>
 
+        {/* Real-time Notifications from Sensor Data */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            📬 Smart Alerts
+          </Text>
+          
+          {notifications.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons 
+                name="checkmark-circle-outline" 
+                size={64} 
+                color={theme.success || '#4CAF50'} 
+              />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                All Caught Up!
+              </Text>
+              <Text style={[styles.emptyMessage, { color: theme.textMuted }]}>
+                No alerts at the moment. Keep up the great hydration! 💧
+              </Text>
+            </View>
+          ) : (
+            notifications.map((notification) => (
+              <View
+                key={notification.id}
+                style={[
+                  styles.notificationCard,
+                  getNotificationStyle(notification.type),
+                  { backgroundColor: theme.card || 'white' }
+                ]}
+              >
+                <View style={styles.notificationContent}>
+                  <View style={styles.iconContainer}>
+                    <Ionicons
+                      name={notification.icon}
+                      size={24}
+                      color={getIconColor(notification.type)}
+                    />
+                  </View>
+                  
+                  <View style={styles.textContainer}>
+                    <Text style={[styles.notificationTitle, { color: theme.text }]}>
+                      {notification.title}
+                    </Text>
+                    <Text style={[styles.notificationMessage, { color: theme.textMuted }]}>
+                      {notification.message}
+                    </Text>
+                    <Text style={[styles.timestamp, { color: theme.textMuted }]}>
+                      {formatTimestamp(notification.timestamp)}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.dismissButton}
+                    onPress={() => dismissNotification(notification.id)}
+                  >
+                    <Ionicons name="close" size={20} color={theme.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                {notification.actionable && (
+                  <View style={styles.notificationActionContainer}>
+                    <TouchableOpacity
+                      style={[styles.notificationActionButton, { borderColor: getIconColor(notification.type) }]}
+                      onPress={() => {
+                        console.log(`Action taken: ${notification.action} for ${notification.id}`);
+                        dismissNotification(notification.id);
+                      }}
+                    >
+                      <Text style={[styles.actionText, { color: getIconColor(notification.type) }]}>
+                        {notification.action === 'refill' ? 'Mark as Refilled' : 
+                         notification.action === 'drink' ? 'Remind Me Later' : 
+                         notification.action === 'connect' ? 'Go to Settings' : 'Got it'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))
+          )}
+        </View>
+
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
           <TouchableOpacity
@@ -729,6 +868,11 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
@@ -785,6 +929,7 @@ const styles = StyleSheet.create({
   },
   toggleInfo: {
     flex: 1,
+    marginLeft: 12,
   },
   toggleTitle: {
     fontSize: 18,
