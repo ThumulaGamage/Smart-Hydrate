@@ -15,7 +15,7 @@ import ThemedText from '../../components/ThemedText';
 import {
     AVAILABLE_GAPS, WAKING_HOURS,
     getTodayDateString, database
-} from './customize-hydration';
+} from '../../utils/hydrationUtils';
 
 // Graceful notification import
 let Notifications = null;
@@ -29,7 +29,9 @@ try {
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: false,  // Deprecated - set to false
+      shouldShowBanner: true,  // NEW: Show banner notification
+      shouldShowList: true,    // NEW: Show in notification list
       shouldPlaySound: true,
       shouldSetBadge: true,
     }),

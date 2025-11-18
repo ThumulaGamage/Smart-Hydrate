@@ -13,13 +13,14 @@ import ThemedView from '../../components/ThemedView';
 import ThemedText from '../../components/ThemedText';
 
 // Import utilities from customize-hydration
-import { AVAILABLE_GAPS, WAKING_HOURS, getTodayDateString, database } from './customize-hydration';
-
+// NEW - USE THIS
+import { AVAILABLE_GAPS, WAKING_HOURS, getTodayDateString, database } from '../../utils/hydrationUtils';
 // Graceful notification import
 let Notifications = null;
 let Device = null;
 let notificationsAvailable = false;
 
+// NEW - USE THIS
 try {
   Notifications = require('expo-notifications');
   Device = require('expo-device');
@@ -27,7 +28,9 @@ try {
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: false,  // Deprecated - set to false
+      shouldShowBanner: true,  // NEW: Show banner notification
+      shouldShowList: true,    // NEW: Show in notification list
       shouldPlaySound: true,
       shouldSetBadge: true,
     }),
