@@ -12,6 +12,9 @@ import HealthyHydrationPlan from './HealthyHydrationPlan';
 // Import the component for the Disease tab
 import DiseaseHydrationPlan from './DiseaseHydrationPlan';
 
+// Import utilities from separate file
+import { database, currentUserId, isAuthReady } from '../../utils/hydrationUtils';
+
 // --- Built-in Theme (No external imports needed) ---
 const lightTheme = {
   background: '#FFFFFF',
@@ -31,31 +34,6 @@ const darkTheme = {
   icon: '#8E8E93',
 };
 
-// --- Global Variables ---
-export let database;
-export let isAuthReady = false;
-export let currentUserId = null;
-
-// Initialize Realtime Database using your existing Firebase app
-try {
-  database = getDatabase(auth.app);
-  console.log('Realtime Database initialized successfully');
-} catch (e) {
-  console.error("Failed to initialize Realtime Database:", e);
-}
-
-// --- Global Context & Utilities (EXPORTED for HealthyHydrationPlan.jsx) ---
-export const AVAILABLE_GAPS = [2, 3, 4];
-export const WAKING_HOURS = 16;
-
-export const getTodayDateString = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 // --- Authentication Handler ---
 const useFirebaseAuth = () => {
   const [authLoading, setAuthLoading] = useState(true);
@@ -63,14 +41,10 @@ const useFirebaseAuth = () => {
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
-        currentUserId = user.uid;
-        isAuthReady = true;
         console.log('User authenticated:', user.uid);
         setAuthLoading(false);
       } else {
         console.log('No user authenticated');
-        currentUserId = null;
-        isAuthReady = false;
         setAuthLoading(false);
       }
     });
