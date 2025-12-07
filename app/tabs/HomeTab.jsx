@@ -578,7 +578,7 @@ export default function EnhancedHomepage() {
     if (profileCapacity && profileCapacity > 0) {
       return profileCapacity;
     }
-    return 1000;
+    return 2000;
   };
 
   const getUserDisplayName = () => {

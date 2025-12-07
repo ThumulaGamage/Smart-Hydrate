@@ -172,9 +172,21 @@ export default function NotificationTab() {
       }
     });
 
+    // Load master notification setting
+    const settingsRef = ref(database, `users/${userId}/settings`);
+    const unsubscribeSettings = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        if (data.pushNotifications !== undefined) {
+          setAllNotificationsEnabled(data.pushNotifications);
+        }
+      }
+    });
+
     return () => {
       unsubscribeHealthy();
       unsubscribeDisease();
+      unsubscribeSettings();
     };
   }, [userId]);
 
@@ -494,38 +506,6 @@ export default function NotificationTab() {
     }
   };
 
-  const handleMasterToggle = async (value) => {
-    setAllNotificationsEnabled(value);
-
-    if (!value) {
-      if (notificationsAvailable) {
-        await Notifications.cancelAllScheduledNotificationsAsync();
-        console.log('🔕 All notifications cancelled');
-      }
-
-      if (userId) {
-        await update(ref(database, `users/${userId}/profile`), {
-          notificationsEnabled: false,
-        });
-        await update(ref(database, `users/${userId}/diseaseProfile`), {
-          notificationsEnabled: false,
-        });
-      }
-
-      Alert.alert(
-        "All Notifications Disabled",
-        "All hydration reminders have been turned off. You can re-enable them anytime.",
-        [{ text: "OK" }]
-      );
-    } else {
-      Alert.alert(
-        "Notifications Enabled",
-        "Please go to 'Customize Hydration' tab to set up your reminders.",
-        [{ text: "OK" }]
-      );
-    }
-  };
-
   const handleHealthyToggle = async (value) => {
     setHealthyEnabled(value);
 
@@ -574,7 +554,7 @@ export default function NotificationTab() {
 
   const handleRescheduleAll = async () => {
     if (!notificationsAvailable || !allNotificationsEnabled) {
-      Alert.alert("Notifications Disabled", "Please enable notifications first.");
+      Alert.alert("Notifications Disabled", "Please enable notifications in Settings first.");
       return;
     }
 
@@ -747,6 +727,16 @@ export default function NotificationTab() {
           </View>
         )}
 
+        {/* Master Notification Status Banner */}
+        {!allNotificationsEnabled && (
+          <View style={[styles.warningCard, { backgroundColor: '#6B7280' }]}>
+            <Ionicons name="notifications-off" size={24} color="#FFFFFF" />
+            <Text style={styles.warningText}>
+              Push notifications are disabled. Enable them in Settings to receive reminders.
+            </Text>
+          </View>
+        )}
+
         {/* Device Info */}
         {notificationsAvailable && Device && (
           <View style={[styles.infoCard, { backgroundColor: theme.card || '#1F2937' }]}>
@@ -762,28 +752,6 @@ export default function NotificationTab() {
             </Text>
           </View>
         )}
-
-        {/* Master Toggle */}
-        <View style={[styles.masterToggleCard, { backgroundColor: theme.card || '#1F2937' }]}>
-          <View style={styles.toggleHeader}>
-            <Ionicons name="notifications-circle" size={28} color={theme.accent || '#0D9488'} />
-            <View style={styles.toggleInfo}>
-              <Text style={[styles.toggleTitle, { color: theme.text }]}>
-                All Notifications
-              </Text>
-              <Text style={[styles.toggleDescription, { color: theme.secondaryText || '#9CA3AF' }]}>
-                {allNotificationsEnabled ? 'Master switch ON' : 'All reminders disabled'}
-              </Text>
-            </View>
-            <Switch
-              value={allNotificationsEnabled}
-              onValueChange={handleMasterToggle}
-              trackColor={{ false: '#374151', true: theme.accent || '#0D9488' }}
-              thumbColor={allNotificationsEnabled ? '#FFFFFF' : '#9CA3AF'}
-              disabled={!notificationsAvailable || !notificationPermission}
-            />
-          </View>
-        </View>
 
         {/* Healthy Hydration Section */}
         <View style={styles.sectionContainer}>
@@ -1009,9 +977,9 @@ export default function NotificationTab() {
           <Text style={[styles.helpTitle, { color: theme.text }]}>How It Works</Text>
           <Text style={[styles.helpText, { color: theme.secondaryText || '#9CA3AF' }]}>
             • Set up your hydration plans in 'Customize Hydration' tab{'\n'}
-            • Enable notifications here to receive reminders{'\n'}
+            • Enable push notifications in Settings to receive reminders{'\n'}
             • Toggle individual plans on/off as needed{'\n'}
-            • Master switch controls all notifications at once{'\n'}
+            • Master notification control is in Settings{'\n'}
             • Water tracking always works, even if notifications are off
           </Text>
         </View>
@@ -1098,30 +1066,6 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     fontWeight: '500',
-  },
-  masterToggleCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 30,
-    borderWidth: 2,
-    borderColor: '#0D9488',
-  },
-  toggleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  toggleInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  toggleTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  toggleDescription: {
-    fontSize: 13,
   },
   sectionContainer: {
     marginBottom: 24,

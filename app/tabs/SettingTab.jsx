@@ -1,6 +1,6 @@
 import { Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Alert,
   FlatList,
@@ -14,9 +14,31 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import { ref, onValue, update } from 'firebase/database';
 import useTheme from '../../Theme/theme';
 import ThemedText from '../../components/ThemedText';
 import ThemedView from '../../components/ThemedView';
+import { auth } from '../../config/firebaseConfig';
+
+// Graceful notification import
+let Notifications = null;
+let notificationsAvailable = false;
+
+try {
+  Notifications = require('expo-notifications');
+  notificationsAvailable = true;
+} catch (error) {
+  console.log('⚠️ Notifications not available in SettingsTab');
+}
+
+// Initialize database
+let database;
+try {
+  const { getDatabase } = require('firebase/database');
+  database = getDatabase(auth.app);
+} catch (e) {
+  console.error("Failed to initialize database:", e);
+}
 
 export default function SettingsTab() {
   const router = useRouter();
@@ -27,11 +49,42 @@ export default function SettingsTab() {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [selectedTheme, setSelectedTheme] = useState('auto');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [userId, setUserId] = useState(null);
 
   // Modal states
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+
+  // Authentication
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        setUserId(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Load push notification setting from Firebase
+  useEffect(() => {
+    if (!userId || !database) return;
+
+    const settingsRef = ref(database, `users/${userId}/settings`);
+    const unsubscribe = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        if (data.pushNotifications !== undefined) {
+          setPushNotifications(data.pushNotifications);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [userId]);
 
   const languages = [
     { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸' },
@@ -49,6 +102,54 @@ export default function SettingsTab() {
     { id: 'dark', title: 'Dark', icon: 'moon-outline', description: 'Always use dark mode' },
     { id: 'auto', title: 'Automatic', icon: 'phone-portrait-outline', description: 'Follow system settings' },
   ];
+
+  const handlePushNotificationToggle = async (value) => {
+    setPushNotifications(value);
+
+    if (!userId || !database) return;
+
+    try {
+      // Update Firebase settings
+      await update(ref(database, `users/${userId}/settings`), {
+        pushNotifications: value,
+      });
+
+      if (!value) {
+        // Cancel all scheduled notifications
+        if (notificationsAvailable) {
+          await Notifications.cancelAllScheduledNotificationsAsync();
+          console.log('🔕 All notifications cancelled');
+        }
+
+        // Update both profile notification settings
+        await update(ref(database, `users/${userId}/profile`), {
+          notificationsEnabled: false,
+        });
+        await update(ref(database, `users/${userId}/diseaseProfile`), {
+          notificationsEnabled: false,
+        });
+
+        Alert.alert(
+          "Push Notifications Disabled",
+          "All hydration reminders have been turned off. You can re-enable them anytime.",
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Push Notifications Enabled",
+          "Go to the Notification tab to set up your hydration reminders.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error) {
+      console.error('Error updating notification settings:', error);
+      Alert.alert(
+        "Error",
+        "Failed to update notification settings. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
+  };
 
   const handleConnectedApps = useCallback(() => {
     Alert.alert(
@@ -133,7 +234,7 @@ export default function SettingsTab() {
           icon: <Ionicons name="notifications-outline" size={22} color={theme.icon || theme.text} />,
           type: 'toggle',
           value: pushNotifications,
-          onToggle: setPushNotifications
+          onToggle: handlePushNotificationToggle
         },
      
         {
@@ -175,7 +276,7 @@ export default function SettingsTab() {
         }
       ]
     }
-  ], [theme, pushNotifications, emailNotifications, selectedTheme, selectedLanguage, router, handleConnectedApps, handleHelpCenter, handleContactUs, getLanguageName, getThemeName]);
+  ], [theme, pushNotifications, emailNotifications, selectedTheme, selectedLanguage, router, handleConnectedApps, handleHelpCenter, handleContactUs, getLanguageName, getThemeName, handlePushNotificationToggle]);
 
   const renderSettingItem = useCallback((item, itemIndex, sectionItemsLength) => {
     const isLastItem = itemIndex === sectionItemsLength - 1;
