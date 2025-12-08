@@ -1,11 +1,10 @@
-// FirebaseConfig.jsx - Updated with Async Storage Persistence
+// config/firebaseConfig.js - SIMPLE VERSION (No Manual Persistence)
 
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/database';
 import 'firebase/compat/firestore';
 import 'firebase/compat/storage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -22,6 +21,7 @@ const firebaseConfig = {
 // Initialize Firebase (only once)
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
+  console.log('✅ Firebase initialized');
 }
 
 // Export Firebase services
@@ -29,15 +29,12 @@ export const auth = firebase.auth();
 export const realtimeDB = firebase.database();
 export const firestore = firebase.firestore();
 export const storage = firebase.storage();
-
 export const FieldValue = firebase.firestore.FieldValue;
-
-
 
 export default firebase;
 
 // =======================================================
-// SMART WATER BOTTLE SERVICE CLASS - Updated for new users
+// SMART WATER BOTTLE SERVICE CLASS
 // =======================================================
 
 export class WaterBottleService {
@@ -50,7 +47,6 @@ export class WaterBottleService {
     this.database = realtimeDB;
   }
 
-  // Check if user is new (created within last 24 hours)
   async isNewUser() {
     try {
       const profileSnapshot = await this.profileRef.once('value');
@@ -69,14 +65,11 @@ export class WaterBottleService {
     }
   }
 
-  // Check if user has any real activity
   async hasRealActivity() {
     try {
-      // Check for any readings
       const readingsSnapshot = await this.readingsRef.limitToLast(1).once('value');
       const hasReadings = readingsSnapshot.exists();
       
-      // Check for any consumption today
       const todayStats = await this.getTodayStats();
       const hasConsumption = todayStats.totalConsumed > 0;
       
@@ -86,10 +79,6 @@ export class WaterBottleService {
       return false;
     }
   }
-
-  // ======================
-  // USER PROFILE METHODS
-  // ======================
 
   async createUserProfile(profileData) {
     try {
@@ -124,10 +113,6 @@ export class WaterBottleService {
       throw error;
     }
   }
-
-  // ======================
-  // SENSOR DATA METHODS
-  // ======================
 
   async saveReading(sensorData) {
     try {
@@ -171,7 +156,6 @@ export class WaterBottleService {
         };
       });
 
-      // Return empty bottle state for new users with no readings
       if (!latestReading) {
         return {
           id: 'empty',
@@ -187,7 +171,6 @@ export class WaterBottleService {
       return latestReading;
     } catch (error) {
       console.error('Error getting latest reading:', error);
-      // Return empty state on error
       return {
         id: 'empty',
         waterLevel: 0,
@@ -199,10 +182,6 @@ export class WaterBottleService {
       };
     }
   }
-
-  // ======================
-  // REAL-TIME LISTENERS
-  // ======================
 
   onRealtimeData(callback) {
     const listener = this.userRef.on('value', (snapshot) => {
@@ -230,7 +209,6 @@ export class WaterBottleService {
           });
         });
 
-        // If no readings for new user, provide empty state
         if (readings.length === 0) {
           readings.push({
             id: 'empty',
@@ -265,10 +243,6 @@ export class WaterBottleService {
 
     return () => this.profileRef.off('value', listener);
   }
-
-  // ======================
-  // DAILY STATISTICS - Updated for new users
-  // ======================
 
   async saveDrinkingEvent(volumeConsumed, timestamp = null) {
     try {
@@ -353,7 +327,6 @@ export class WaterBottleService {
     }
   }
 
-  // Enhanced method for new users
   onTodayStats(callback) {
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -362,7 +335,6 @@ export class WaterBottleService {
       const listener = todayStatsRef.on('value', async (snapshot) => {
         const stats = snapshot.val();
         
-        // For new users or users with no stats, return empty state
         if (!stats) {
           const profile = await this.getUserProfile();
           const emptyStats = {
@@ -373,14 +345,12 @@ export class WaterBottleService {
             goalAchieved: false,
             averageTemperature: null,
             sessions: [],
-            isNewUser: true // Flag to help UI components
+            isNewUser: true
           };
-          console.log('Returning empty stats for new user');
           callback(emptyStats);
           return;
         }
 
-        console.log('Real-time stats update:', stats);
         callback({ ...stats, isNewUser: false });
       }, (error) => {
         console.error('Error in today stats listener:', error);
@@ -431,7 +401,6 @@ export class WaterBottleService {
     }
   }
 
-  // Updated weekly stats for new users
   async getWeeklyStats() {
     try {
       const today = new Date();
@@ -446,7 +415,6 @@ export class WaterBottleService {
       const weeklyData = [];
       const hasData = snapshot.exists();
       
-      // Generate 7 days of data
       for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
@@ -478,7 +446,6 @@ export class WaterBottleService {
     } catch (error) {
       console.error('Error getting weekly stats:', error);
       
-      // Always return a valid structure
       const today = new Date();
       const emptyWeekData = [];
       
@@ -502,10 +469,6 @@ export class WaterBottleService {
       };
     }
   }
-
-  // ======================
-  // SIMULATION METHODS - Updated
-  // ======================
 
   simulateReading() {
     const sensorData = {
@@ -555,7 +518,7 @@ export class WaterBottleService {
         console.log(`Simulated drinking ${amount}ml. New level: ${newLevel}ml`);
         return newLevel;
       } else {
-        console.log('No change in water volume detected. No update to readings or daily stats.');
+        console.log('No change in water volume detected.');
         return currentLevel;
       }
     } catch (error) {

@@ -1,7 +1,8 @@
-// context/UserDetailContext.jsx - Fixed with proper compat imports
+// context/UserDetailContext.jsx - Updated with Time Tracking Integration
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, firestore, realtimeDB, WaterBottleService, FieldValue } from '../config/firebaseConfig';
+import { TimeTrackingService } from '../services/TimeTrackingService';
 
 // Create the UserContext
 const UserDetailContext = createContext();
@@ -22,6 +23,7 @@ export const UserProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [useFirestore, setUseFirestore] = useState(true);
+  const [timeTrackingService, setTimeTrackingService] = useState(null);
 
   // Convert Realtime DB profile data to Firestore-like format
   const convertRealtimeToFirestoreFormat = (profileData, uid) => {
@@ -72,7 +74,48 @@ export const UserProvider = ({ children }) => {
         weeklyReports: true,
         friendsFeature: false,
       },
+      // Time tracking data placeholder
+      timeTracking: {
+        totalSeconds: 0,
+        lastUpdated: null,
+      },
     };
+  };
+
+  // Initialize time tracking service for user
+  const initializeTimeTracking = async (uid) => {
+    try {
+      console.log('⏱️ Initializing time tracking for user:', uid);
+      const service = new TimeTrackingService(uid);
+      
+      // Recover any incomplete session
+      await service.recoverIncompleteSession();
+      
+      // Start new session
+      await service.startSession();
+      
+      setTimeTrackingService(service);
+      console.log('✅ Time tracking initialized successfully');
+      
+      return service;
+    } catch (error) {
+      console.error('❌ Failed to initialize time tracking:', error);
+      return null;
+    }
+  };
+
+  // Cleanup time tracking on logout
+  const cleanupTimeTracking = async () => {
+    if (timeTrackingService) {
+      try {
+        console.log('⏱️ Cleaning up time tracking...');
+        await timeTrackingService.endSession();
+        setTimeTrackingService(null);
+        console.log('✅ Time tracking cleaned up');
+      } catch (error) {
+        console.error('❌ Error cleaning up time tracking:', error);
+      }
+    }
   };
 
   // Fetch user details from Realtime Database as fallback
@@ -113,6 +156,12 @@ export const UserProvider = ({ children }) => {
             console.log('User details fetched from Firestore');
             const userData = userDoc.data();
             setUserDetails(userData);
+            
+            // Update last login time
+            userDocRef.update({
+              lastLoginAt: FieldValue.serverTimestamp(),
+            }).catch(err => console.warn('Could not update lastLoginAt:', err));
+            
             return userData;
           } else {
             console.log('User not found in Firestore, trying Realtime Database...');
@@ -338,8 +387,15 @@ export const UserProvider = ({ children }) => {
             
             // Fetch additional user details
             await fetchUserDetails(firebaseUser.uid);
+            
+            // Initialize time tracking
+            await initializeTimeTracking(firebaseUser.uid);
           } else {
             console.log('👤 UserDetailContext: User signed out');
+            
+            // Cleanup time tracking before clearing user
+            await cleanupTimeTracking();
+            
             setUser(null);
             setUserDetails(null);
             setUseFirestore(true);
@@ -360,6 +416,7 @@ export const UserProvider = ({ children }) => {
 
     return () => {
       console.log('👤 UserDetailContext: Cleaning up auth listener');
+      cleanupTimeTracking();
       unsubscribe();
     };
   }, [useFirestore]);
@@ -367,6 +424,10 @@ export const UserProvider = ({ children }) => {
   const logout = async () => {
     try {
       setLoading(true);
+      
+      // End time tracking session before logout
+      await cleanupTimeTracking();
+      
       await auth.signOut();
       setUser(null);
       setUserDetails(null);
@@ -409,6 +470,7 @@ export const UserProvider = ({ children }) => {
     updateUserDetails,
     clearError,
     dataSource: useFirestore ? 'firestore' : 'realtime',
+    timeTrackingService, // Expose time tracking service
   };
 
   return (
